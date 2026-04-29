@@ -12,13 +12,13 @@ import (
 	apperror "github.com/NishLy/go-fiber-boilerplate/internal/error"
 	"github.com/NishLy/go-fiber-boilerplate/internal/middleware"
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/database"
-	"github.com/NishLy/go-fiber-boilerplate/internal/platform/ws"
 	"github.com/NishLy/go-fiber-boilerplate/internal/routes"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/compress"
 	"github.com/gofiber/fiber/v3/middleware/helmet"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
+	socketio "github.com/googollee/go-socket.io"
 	"go.uber.org/zap"
 )
 
@@ -32,6 +32,8 @@ func main() {
 	}
 
 	fiberApp := fiber.New(fiber.Config{ErrorHandler: apperror.ErrorHandler})
+	io := socketio.NewServer(nil)
+	defer io.Close()
 
 	// Start a goroutine to periodically clean up idle database connections
 	database.CleanupDBs(time.Second * 60)
@@ -49,7 +51,7 @@ func main() {
 
 	appContainer := &app.App{
 		Config: configApp,
-		WsHub:  ws.NewHub(),
+		Io:     io,
 	}
 
 	routes.Setup(appContainer, fiberApp)

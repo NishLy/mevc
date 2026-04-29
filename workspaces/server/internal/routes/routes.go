@@ -3,6 +3,7 @@ package routes
 import (
 	"github.com/NishLy/go-fiber-boilerplate/internal/app"
 	"github.com/NishLy/go-fiber-boilerplate/internal/auth"
+	"github.com/NishLy/go-fiber-boilerplate/internal/room"
 	"github.com/NishLy/go-fiber-boilerplate/internal/token"
 	"github.com/NishLy/go-fiber-boilerplate/internal/user"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
@@ -36,5 +37,8 @@ func Setup(appContainer *app.App, app *fiber.App) {
 	}
 
 	// app.Get("/ws", websocket.New(ws.Handler(appContainer.WsHub)))
+
+	// init room handler and service
+	room.RoomWsBootstrap(appContainer.Io)
 
 }
