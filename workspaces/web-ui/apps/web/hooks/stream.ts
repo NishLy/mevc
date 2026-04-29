@@ -249,6 +249,8 @@ const useStream = () => {
         ),
       ])
 
+      room.setPinnedStreamIds([...room.pinnedStreamIds, "local-screen"])
+
       if (screenStream.getVideoTracks().length > 0) {
         screenStream.getVideoTracks()[0]!.onended = () => {
           stopScreenShare(screenStream)

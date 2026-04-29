@@ -5,7 +5,9 @@ interface currentRoomState {
   roomId: string | null
   setRoomId: (id: string | null) => void
   videosStreams: StreamVideoState[]
+  pinnedStreamIds: string[]
   setVideoStreams: (streams: StreamVideoState[]) => void
+  setPinnedStreamIds: (ids: string[]) => void
 }
 
 const useCurrentRoom = create<currentRoomState>((set) => ({
@@ -20,7 +22,9 @@ const useCurrentRoom = create<currentRoomState>((set) => ({
       isLocal: true,
     },
   ],
+  pinnedStreamIds: [],
   setVideoStreams: (streams) => set({ videosStreams: streams }),
+  setPinnedStreamIds: (ids) => set({ pinnedStreamIds: ids }),
 }))
 
 export default useCurrentRoom
