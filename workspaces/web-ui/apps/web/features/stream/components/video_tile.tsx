@@ -160,7 +160,7 @@ function VideoTile(props: StreamVideoState) {
         muted={props.isLocal}
         controls={false}
         poster="https://img.favpng.com/10/24/2/computer-icons-user-icon-design-male-png-favpng-grqs7j1MENUsCah7VD6XBWVst.jpg"
-        className="h-full w-full object-cover"
+        className="h-full w-full object-contain"
       />
 
       {/* gradient scrim — only visible on hover */}

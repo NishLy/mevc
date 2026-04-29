@@ -145,6 +145,7 @@ const useStream = (props?: UseStreamProps) => {
         }))
       }
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const room = useCurrentRoom()
@@ -171,7 +172,7 @@ const useStream = (props?: UseStreamProps) => {
       )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options.camera, options.audio, isVideoEnabled, isMuted])
+  }, [options.camera, options.audio])
 
   const handleCameraChange = useCallback(
     async (id: string, options?: CameraOpenSettings) => {

@@ -43,7 +43,7 @@ export default function VideosGrid({
       {pinnedStreams.length > 0 && (
         <div
           className={classNames(
-            "grid h-screen w-full content-center justify-items-center gap-2 overflow-y-auto bg-zinc-900 p-2",
+            "grid h-screen w-full content-center justify-items-center gap-2 overflow-y-auto p-2",
             calculateGridColumns(pinnedStreams.length),
             "z-10"
           )}
