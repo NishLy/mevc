@@ -1,7 +1,7 @@
 "use client"
 
-import ControlBar from "@/components/stream/control_bar"
-import VideosGrid from "@/components/stream/video_grid"
+import ControlBar from "@/features/stream/components/control_bar"
+import VideosGrid from "@/features/stream/components/video_grid"
 
 export default function Room() {
   return (

@@ -17,7 +17,9 @@
     "next.config.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    "../features/stream/components/control_bar.tsx",
+    "../features/stream/components/video_grid.tsx"
   ],
   "exclude": ["node_modules"]
 }

@@ -1,6 +1,16 @@
 import { AudioOpenSettings, CameraOpenSettings } from "@/types/stream"
 import { useCallback, useEffect, useRef, useState } from "react"
 
+// screen sharing sections
+async function requestScreenShare() {
+  const mediaStream = await navigator.mediaDevices.getDisplayMedia({
+    video: {},
+    audio: true,
+  })
+  return mediaStream
+}
+
+// camera and mic sections
 async function init(
   onDevicesUpdated?: (
     availableVideoDevices: MediaDeviceInfo[],
@@ -116,6 +126,11 @@ const useStream = (props: UseStreamProps) => {
 
   const videoRef = useRef<HTMLVideoElement>(null)
 
+  const [currentScreenShareStream, setCurrentScreenShareStream] =
+    useState<MediaStream | null>(null)
+  const [isCurrentlyScreenSharing, setIsCurrentlyScreenSharing] =
+    useState(false)
+
   useEffect(() => {
     init((videoDevices, audioDevices) => {
       setAvailableCameras(videoDevices)
@@ -210,6 +225,26 @@ const useStream = (props: UseStreamProps) => {
     }
   }, [currentMediaStream])
 
+  const startScreenShare = useCallback(async () => {
+    try {
+      const screenStream = await requestScreenShare()
+      setCurrentScreenShareStream(screenStream)
+      setIsCurrentlyScreenSharing(true)
+      return screenStream
+    } catch (e) {
+      console.warn("Screen share failed:", e)
+      return null
+    }
+  }, [])
+
+  const stopScreenShare = useCallback(() => {
+    if (currentScreenShareStream) {
+      currentScreenShareStream.getTracks().forEach((track) => track.stop())
+      setCurrentScreenShareStream(null)
+      setIsCurrentlyScreenSharing(false)
+    }
+  }, [currentScreenShareStream])
+
   return {
     availableCameras,
     availableAudioDevices,
@@ -223,6 +258,10 @@ const useStream = (props: UseStreamProps) => {
     toggleVideoStream,
     setOptions,
     handleAudioDeviceChange,
+    startScreenShare,
+    currentScreenShareStream,
+    stopScreenShare,
+    isCurrentlyScreenSharing,
   }
 }
 

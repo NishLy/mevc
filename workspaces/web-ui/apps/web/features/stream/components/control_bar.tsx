@@ -139,6 +139,9 @@ export default function ControlBar() {
     handleAudioDeviceChange,
     toggleMute,
     toggleVideoStream,
+    startScreenShare,
+    stopScreenShare,
+    isCurrentlyScreenSharing,
   } = useStream({ videoElementId: "localVideo" })
 
   const timer = useTimer()
@@ -286,11 +289,19 @@ export default function ControlBar() {
             tooltip="Open chat"
           />
 
-          {/* Share Screen — dummy */}
+          {/* Share Screen */}
           <ControlButton
             icon={<MonitorUp className="h-4 w-4" />}
-            label="Share Screen"
-            tooltip="Share your screen"
+            label={isCurrentlyScreenSharing ? "Stop Sharing" : "Share Screen"}
+            tooltip={
+              isCurrentlyScreenSharing
+                ? "Stop sharing your screen"
+                : "Share your screen"
+            }
+            active={isCurrentlyScreenSharing}
+            onClick={
+              isCurrentlyScreenSharing ? stopScreenShare : startScreenShare
+            }
           />
 
           {/* Reactions — dummy */}
