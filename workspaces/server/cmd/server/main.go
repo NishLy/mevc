@@ -14,6 +14,7 @@ import (
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/database"
 	"github.com/NishLy/go-fiber-boilerplate/internal/routes"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
+	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/compress"
 	"github.com/gofiber/fiber/v3/middleware/helmet"
@@ -34,6 +35,9 @@ func main() {
 	fiberApp := fiber.New(fiber.Config{ErrorHandler: apperror.ErrorHandler})
 	io := socketio.NewServer(nil)
 	defer io.Close()
+
+	// Register Socket.IO server as a handler for the "/socket.io/*" route
+	fiberApp.All("/socket.io/*", adaptor.HTTPHandler(io))
 
 	// Start a goroutine to periodically clean up idle database connections
 	database.CleanupDBs(time.Second * 60)
