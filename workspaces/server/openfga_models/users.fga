@@ -1,0 +1,20 @@
+model
+  schema 1.1
+
+type system
+  relations
+    define admin: [user, group#member]  
+
+type group
+  relations
+    define member: [user, group#member] 
+
+type branch
+  relations
+    define member: [user, group#member]  
+
+type user
+  relations
+    define owner: [user]
+    define viewer_all: [system#admin]
+    define can_view: owner or viewer_all 

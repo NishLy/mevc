@@ -1,0 +1,190 @@
+definitions:
+  github_com_NishLy_go-fiber-boilerplate_internal_domain.User:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      profile_image_url:
+        type: string
+      updated_at:
+        type: string
+      verified:
+        type: boolean
+    type: object
+  github_com_NishLy_go-fiber-boilerplate_internal_error.Code:
+    enum:
+    - 404
+    - 409
+    - 500
+    - 400
+    - 403
+    - 401
+    type: integer
+    x-enum-varnames:
+    - NotFound
+    - Duplicate
+    - Internal
+    - Invalid
+    - PermissionDenied
+    - Unauthorized
+  github_com_NishLy_go-fiber-boilerplate_internal_error.Error:
+    properties:
+      code:
+        $ref: '#/definitions/github_com_NishLy_go-fiber-boilerplate_internal_error.Code'
+      data:
+        description: Optional field for additional error context
+      err: {}
+      message:
+        type: string
+    type: object
+  ? github_com_NishLy_go-fiber-boilerplate_internal_response.PagedDataResponse-github_com_NishLy_go-fiber-boilerplate_internal_domain_User
+  : properties:
+      code:
+        type: integer
+      data:
+        items:
+          $ref: '#/definitions/github_com_NishLy_go-fiber-boilerplate_internal_domain.User'
+        type: array
+      message:
+        type: string
+      meta:
+        $ref: '#/definitions/github_com_NishLy_go-fiber-boilerplate_internal_response.PaginationMeta'
+    type: object
+  github_com_NishLy_go-fiber-boilerplate_internal_response.PaginationMeta:
+    properties:
+      after:
+        type: string
+      before:
+        type: string
+      has_next:
+        type: boolean
+      has_prev:
+        type: boolean
+    type: object
+  internal_auth.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  internal_auth.RegisterRequest:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - email
+    - name
+    - password
+    type: object
+info:
+  contact: {}
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user with credentials
+      parameters:
+      - description: Login request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_auth.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: User login
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Register a new user
+      parameters:
+      - description: Register request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_auth.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: User registration
+      tags:
+      - auth
+  /users:
+    get:
+      description: Retrieve a paginated list of all users
+      parameters:
+      - description: Cursor before
+        in: query
+        name: before
+        type: string
+      - description: Cursor after
+        in: query
+        name: after
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Search term
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_NishLy_go-fiber-boilerplate_internal_response.PagedDataResponse-github_com_NishLy_go-fiber-boilerplate_internal_domain_User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_NishLy_go-fiber-boilerplate_internal_error.Error'
+      summary: Get users
+      tags:
+      - users
+swagger: "2.0"

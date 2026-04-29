@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    networks:
+      - openfga
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=postgres
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # This job runs once to create the database schema
+  migrate:
+    image: openfga/openfga:latest
+    container_name: openfga-migrate
+    command: migrate
+    networks:
+      - openfga
+    environment:
+      - OPENFGA_DATASTORE_ENGINE=postgres
+      - OPENFGA_DATASTORE_URI=postgres://postgres:password@postgres:5432/postgres?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  openfga:
+    image: openfga/openfga:latest
+    container_name: openfga
+    command: run
+    networks:
+      - openfga
+    environment:
+      - OPENFGA_DATASTORE_ENGINE=postgres
+      - OPENFGA_DATASTORE_URI=postgres://postgres:password@postgres:5432/postgres?sslmode=disable
+      - OPENFGA_PLAYGROUND_ENABLED=true
+      - OPENFGA_PLAYGROUND_HOST=0.0.0.0
+    ports:
+      - "8080:8080" # HTTP API
+      - "8081:8081" # gRPC API
+      - "3000:3000" # Playground UI
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    networks:
+      - openfga
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  openfga:
+    driver: bridge
