@@ -24,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu"
 import { StreamVideoState } from "../types/stream"
+import useCurrentRoom from "../state"
 
 interface MenuItemDef {
   icon: React.ReactNode
@@ -86,10 +87,66 @@ function VideoTile(props: StreamVideoState) {
   const dangerItems = props.isLocal ? [] : REMOTE_MENU_DANGER
   const showOverlay = hovered || menuOpen
 
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  const room = useCurrentRoom()
+  const isPinned = room.pinnedStreamIds.includes(props.id)
+
+  const togglePin = () => {
+    if (isPinned) {
+      room.setPinnedStreamIds(
+        room.pinnedStreamIds.filter((id) => id !== props.id)
+      )
+    } else {
+      room.setPinnedStreamIds([...room.pinnedStreamIds, props.id])
+    }
+  }
+
+  const toggleFullscreen = async (element: HTMLElement) => {
+    if (!document.fullscreenElement) {
+      try {
+        // Request fullscreen
+        if (element.requestFullscreen) {
+          await element.requestFullscreen()
+        } else if ((element as any).webkitRequestFullscreen) {
+          /* Safari */
+          await (element as any).webkitRequestFullscreen()
+        } else if ((element as any).msRequestFullscreen) {
+          /* IE11 */
+          await (element as any).msRequestFullscreen()
+        }
+      } catch (err) {
+        console.error(
+          `Error attempting to enable fullscreen: ${(err as Error).message}`
+        )
+      }
+
+      setIsFullscreen(true)
+
+      const handleFullscreenChange = () => {
+        if (!document.fullscreenElement) {
+          setIsFullscreen(false)
+        }
+      }
+
+      document.removeEventListener("fullscreenchange", handleFullscreenChange)
+      document.addEventListener("fullscreenchange", handleFullscreenChange)
+    } else {
+      // Exit fullscreen
+      if (document.exitFullscreen) {
+        document.exitFullscreen()
+        setIsFullscreen(false)
+      }
+    }
+  }
+
+  // Usage:
+  // <button onClick={() => toggleFullscreen(document.documentElement)}>Go Fullscreen</button>
+
   return (
     <div
       className={classNames(
-        "group relative aspect-video shrink-0 overflow-hidden rounded-lg bg-zinc-800",
+        "group relative box-border aspect-video max-h-[95vh] shrink-0 overflow-hidden rounded-lg bg-zinc-800",
         props.isLocal && "ring-1 ring-blue-400/50"
       )}
       onMouseEnter={() => setHovered(true)}
@@ -122,13 +179,29 @@ function VideoTile(props: StreamVideoState) {
         )}
       >
         {/* Pin shortcut */}
-        <button className="flex h-7 w-7 items-center justify-center rounded-md bg-black/50 text-white/80 backdrop-blur-sm transition hover:bg-black/70 hover:text-white">
-          <Pin className="h-3.5 w-3.5" />
+        <button
+          className="flex h-7 w-7 items-center justify-center rounded-md bg-black/50 text-white/80 backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
+          onClick={togglePin}
+          title={isPinned ? "Unpin video" : "Pin video"}
+        >
+          {isPinned ? (
+            <PinOff className="h-3.5 w-3.5" />
+          ) : (
+            <Pin className="h-3.5 w-3.5" />
+          )}
         </button>
 
         {/* Full screen shortcut */}
-        <button className="flex h-7 w-7 items-center justify-center rounded-md bg-black/50 text-white/80 backdrop-blur-sm transition hover:bg-black/70 hover:text-white">
-          <Maximize2 className="h-3.5 w-3.5" />
+        <button
+          className="flex h-7 w-7 items-center justify-center rounded-md bg-black/50 text-white/80 backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
+          onClick={() => toggleFullscreen(document.getElementById(props.id)!)}
+          title={isFullscreen ? "Exit full screen" : "Full screen"}
+        >
+          {isFullscreen ? (
+            <Maximize2 className="h-3.5 w-3.5 rotate-45" />
+          ) : (
+            <Maximize2 className="h-3.5 w-3.5" />
+          )}
         </button>
 
         {/* More menu */}

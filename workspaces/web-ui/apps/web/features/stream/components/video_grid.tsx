@@ -23,15 +23,16 @@ export default function VideosGrid({
   const unpinnedStreams = streams.filter((s) => !pinnedStreamIds.includes(s.id))
   const pinnedStreams = streams.filter((s) => pinnedStreamIds.includes(s.id))
 
+  console.log("Pinned streams:", pinnedStreams)
   return (
     <>
       <div
         className={classNames(
-          "w-full auto-rows-max content-center gap-2 p-2",
+          "content-center gap-2 overflow-y-auto p-2",
           calculateGridColumns(unpinnedStreams.length),
           pinnedStreams.length > 0 &&
-            "fixed inset-0 z-10 flex h-44 overflow-y-auto",
-          pinnedStreams.length === 0 && "grid"
+            "fixed top-0 left-0 z-10 grid h-44 w-fit justify-items-start overflow-x-auto overflow-y-hidden bg-transparent backdrop-blur-sm",
+          pinnedStreams.length === 0 && "grid h-screen w-full rounded-lg p-4"
         )}
       >
         {unpinnedStreams.map((s) => (
