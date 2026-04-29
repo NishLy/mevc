@@ -142,7 +142,7 @@ export default function ControlBar() {
     startScreenShare,
     stopScreenShare,
     isCurrentlyScreenSharing,
-  } = useStream({ videoElementId: "localVideo" })
+  } = useStream({ videoElementId: "local-video-placeholder" })
 
   const timer = useTimer()
 
