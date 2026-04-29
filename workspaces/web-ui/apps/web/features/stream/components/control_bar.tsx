@@ -143,7 +143,7 @@ export default function ControlBar() {
     stopScreenShare,
     isCurrentlyScreenSharing,
     currentScreenShareStream,
-  } = useStream()
+  } = useStream({ initateWithAnyCameraExisting: true })
 
   const timer = useTimer()
 

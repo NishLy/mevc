@@ -98,8 +98,11 @@ async function startStream(
 
   return finalStream
 }
+interface UseStreamProps {
+  initateWithAnyCameraExisting?: boolean
+}
 
-const useStream = () => {
+const useStream = (props?: UseStreamProps) => {
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>(
     []
   )
@@ -132,6 +135,15 @@ const useStream = () => {
     init((videoDevices, audioDevices) => {
       setAvailableCameras(videoDevices)
       setAvailableAudioDevices(audioDevices)
+
+      if (props?.initateWithAnyCameraExisting && videoDevices.length > 0) {
+        const defaultCamera = videoDevices[0]
+        setSelectedCameraId(defaultCamera!.deviceId)
+        setOptions((prev) => ({
+          ...prev,
+          camera: { deviceId: { exact: defaultCamera!.deviceId } },
+        }))
+      }
     })
   }, [])
 
