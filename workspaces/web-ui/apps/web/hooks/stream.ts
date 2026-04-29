@@ -53,7 +53,6 @@ async function getConnectedDevices(type: string) {
 }
 
 async function startStream(
-  element: HTMLVideoElement,
   cameraOptions?: CameraOpenSettings,
   audioOptions?: AudioOpenSettings,
   // Add these parameters to maintain state across device swaps
@@ -97,15 +96,10 @@ async function startStream(
     }
   }
 
-  element.srcObject = finalStream
   return finalStream
 }
 
-interface UseStreamProps {
-  videoElementId: string
-}
-
-const useStream = (props: UseStreamProps) => {
+const useStream = () => {
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>(
     []
   )
@@ -129,8 +123,6 @@ const useStream = (props: UseStreamProps) => {
   const [isMuted, setIsMuted] = useState(false)
   const [isVideoEnabled, setIsVideoEnabled] = useState(true)
 
-  const videoRef = useRef<HTMLVideoElement>(null)
-
   const [currentScreenShareStream, setCurrentScreenShareStream] =
     useState<MediaStream | null>(null)
   const [isCurrentlyScreenSharing, setIsCurrentlyScreenSharing] =
@@ -146,46 +138,25 @@ const useStream = (props: UseStreamProps) => {
   const room = useCurrentRoom()
 
   useEffect(() => {
-    if (videoRef.current) return
-
-    const interval = setInterval(() => {
-      const videoElement = document.getElementById(
-        props.videoElementId
-      ) as HTMLVideoElement | null
-      if (videoElement) {
-        videoRef.current = videoElement
-        clearInterval(interval)
-      }
-    }, 500)
-
-    return () => clearInterval(interval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    if (videoRef.current && (selectedCameraId || selectedAudioDeviceId)) {
+    if (selectedCameraId || selectedAudioDeviceId) {
       // Pass the current state to the new stream creator
-      startStream(
-        videoRef.current,
-        options.camera,
-        options.audio,
-        isVideoEnabled,
-        !isMuted
-      ).then((stream) => {
-        setCurrentMediaStream(stream)
-        // Update the room's video streams
-        room.setVideoStreams([
-          {
-            id: "local-video-placeholder",
-            stream,
-            isLocal: true,
-            type: StreamVideoEntityType.SELF,
-          },
-          ...room.videosStreams.filter(
-            (s) => s.type !== StreamVideoEntityType.SELF
-          ),
-        ])
-      })
+      startStream(options.camera, options.audio, isVideoEnabled, !isMuted).then(
+        (stream) => {
+          setCurrentMediaStream(stream)
+          // Update the room's video streams
+          room.setVideoStreams([
+            {
+              id: "local-video-placeholder",
+              stream,
+              isLocal: true,
+              type: StreamVideoEntityType.SELF,
+            },
+            ...room.videosStreams.filter(
+              (s) => s.type !== StreamVideoEntityType.SELF
+            ),
+          ])
+        }
+      )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options.camera, options.audio, isVideoEnabled, isMuted])
@@ -246,11 +217,26 @@ const useStream = (props: UseStreamProps) => {
     }
   }, [currentMediaStream])
 
+  const stopScreenShare = useCallback(
+    (stream: MediaStream) => {
+      stream.getTracks().forEach((track) => track.stop())
+      setCurrentScreenShareStream(null)
+      setIsCurrentlyScreenSharing(false)
+      room.setVideoStreams(
+        room.videosStreams.filter(
+          (s) => s.type !== StreamVideoEntityType.SCREEN_SHARE && s.isLocal
+        )
+      )
+    },
+    [room]
+  )
+
   const startScreenShare = useCallback(async () => {
     try {
       const screenStream = await requestScreenShare()
       setCurrentScreenShareStream(screenStream)
       setIsCurrentlyScreenSharing(true)
+
       room.setVideoStreams([
         {
           id: "local-screen",
@@ -259,28 +245,22 @@ const useStream = (props: UseStreamProps) => {
           type: StreamVideoEntityType.SCREEN_SHARE,
         },
         ...room.videosStreams.filter(
-          (s) => s.type !== StreamVideoEntityType.SCREEN_SHARE
+          (s) => s.type !== StreamVideoEntityType.SCREEN_SHARE && s.isLocal
         ),
       ])
+
+      if (screenStream.getVideoTracks().length > 0) {
+        screenStream.getVideoTracks()[0]!.onended = () => {
+          stopScreenShare(screenStream)
+        }
+      }
+
       return screenStream
     } catch (e) {
       console.warn("Screen share failed:", e)
       return null
     }
-  }, [room])
-
-  const stopScreenShare = useCallback(() => {
-    if (currentScreenShareStream) {
-      currentScreenShareStream.getTracks().forEach((track) => track.stop())
-      setCurrentScreenShareStream(null)
-      setIsCurrentlyScreenSharing(false)
-      room.setVideoStreams(
-        room.videosStreams.filter(
-          (s) => s.type !== StreamVideoEntityType.SCREEN_SHARE
-        )
-      )
-    }
-  }, [currentScreenShareStream, room])
+  }, [room, stopScreenShare])
 
   return {
     availableCameras,

@@ -142,7 +142,8 @@ export default function ControlBar() {
     startScreenShare,
     stopScreenShare,
     isCurrentlyScreenSharing,
-  } = useStream({ videoElementId: "local-video-placeholder" })
+    currentScreenShareStream,
+  } = useStream()
 
   const timer = useTimer()
 
@@ -213,9 +214,9 @@ export default function ControlBar() {
       {/* <video id="localVideo" autoPlay playsInline controls={false} className="absolute inset-0 w-full h-full object-cover" /> */}
 
       <TooltipProvider delayDuration={300}>
-        <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/[0.08] bg-[#1a1a28]/95 px-4 py-2.5 shadow-2xl backdrop-blur-xl">
+        <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/8 bg-[#1a1a28]/95 px-4 py-2.5 shadow-2xl backdrop-blur-xl">
           {/* Timer */}
-          <span className="min-w-[44px] text-center text-xs text-white/40 tabular-nums select-none">
+          <span className="min-w-11 text-center text-xs text-white/40 tabular-nums select-none">
             {timer}
           </span>
 
@@ -299,9 +300,13 @@ export default function ControlBar() {
                 : "Share your screen"
             }
             active={isCurrentlyScreenSharing}
-            onClick={
-              isCurrentlyScreenSharing ? stopScreenShare : startScreenShare
-            }
+            onClick={() => {
+              if (isCurrentlyScreenSharing) {
+                stopScreenShare(currentScreenShareStream!)
+              } else {
+                startScreenShare()
+              }
+            }}
           />
 
           {/* Reactions — dummy */}
@@ -348,7 +353,7 @@ export default function ControlBar() {
 
           {/* End Call */}
           <Button className="h-11 gap-2 rounded-xl bg-red-500 px-5 text-sm font-semibold text-white transition-colors hover:bg-red-600 active:bg-red-700">
-            <Phone className="h-4 w-4 rotate-[135deg]" />
+            <Phone className="h-4 w-4 rotate-135" />
             End
           </Button>
         </div>

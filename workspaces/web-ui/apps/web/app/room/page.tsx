@@ -9,13 +9,7 @@ export default function Room() {
 
   return (
     <div>
-      <VideosGrid
-        streams={room.videosStreams.map((s) => ({
-          id: s.id,
-          stream: s.stream,
-          isLocal: s.isLocal,
-        }))}
-      />
+      <VideosGrid streams={room.videosStreams} />
       <ControlBar />
     </div>
   )
