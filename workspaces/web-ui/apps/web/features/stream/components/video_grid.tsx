@@ -23,7 +23,6 @@ export default function VideosGrid({
   const unpinnedStreams = streams.filter((s) => !pinnedStreamIds.includes(s.id))
   const pinnedStreams = streams.filter((s) => pinnedStreamIds.includes(s.id))
 
-  console.log("Pinned streams:", pinnedStreams)
   return (
     <>
       <div

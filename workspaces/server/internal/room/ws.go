@@ -28,10 +28,22 @@ func RoomWsBootstrap(io *socketio.Server) {
 		c.Leave(roomID)
 	})
 
+	// sent offer to room
+	io.OnEvent("/", "send_offer", func(c socketio.Conn, roomID string, offer interface{}) {
+		logger.Sugar.Infof("Received offer from client %s for room %s: %v", c.ID(), roomID, offer)
+		io.BroadcastToRoom("/", roomID, "received_offer", offer)
+	})
+
+	// send answer to room
+	io.OnEvent("/", "send_answer", func(c socketio.Conn, roomID string, answer interface{}) {
+		logger.Sugar.Infof("Received answer from client %s for room %s: %v", c.ID(), roomID, answer)
+		io.BroadcastToRoom("/", roomID, "received_answer", answer)
+	})
+
 	// send candidate to room
 	io.OnEvent("/", "send_candidate", func(c socketio.Conn, roomID string, candidate interface{}) {
 		logger.Sugar.Infof("Received candidate from client %s for room %s: %v", c.ID(), roomID, candidate)
-		io.BroadcastToRoom("/", roomID, "receive_candidate", candidate)
+		io.BroadcastToRoom("/", roomID, "received_candidate", candidate)
 	})
 
 	io.OnDisconnect("/", func(s socketio.Conn, reason string) {

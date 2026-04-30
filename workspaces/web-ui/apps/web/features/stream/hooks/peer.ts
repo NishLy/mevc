@@ -1,5 +1,6 @@
 import useSocketIo, { socketIoState } from "@/hooks/socket.io"
 import { useRef, useEffect, use, useState } from "react"
+import { RtcWsMessage } from "../types/stream"
 
 interface UsePeerProps {
   roomId: string | null
@@ -17,8 +18,10 @@ interface PeerHookReturn {
   }
 }
 
+const iceCandidateQueue: RTCIceCandidate[] = []
+
 const bootstrapPeerConnection = async (
-  socket: socketIoState,
+  chatRoomId: string,
   peerRef: React.MutableRefObject<RTCPeerConnection | null>,
   localStreams: MediaStream[],
   onRemoteStream?: (stream: MediaStream) => void
@@ -31,8 +34,15 @@ const bootstrapPeerConnection = async (
   // 1. Set up listeners FIRST
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      console.log("ICE Candidate found:", event.candidate)
-      socket.socket?.emit("send_candidate", event.candidate)
+      const candidateMessage: RtcWsMessage<RTCIceCandidateInit> = {
+        clientId: useSocketIo.getState().socket?.id || "",
+        type: "candidate",
+        payload: event.candidate,
+      }
+
+      useSocketIo
+        .getState()
+        .socket?.emit("send_candidate", chatRoomId, candidateMessage)
     }
   }
 
@@ -52,19 +62,93 @@ const bootstrapPeerConnection = async (
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
 
-  socket.socket?.emit("send_offer", offer)
+  const offerMessage: RtcWsMessage<RTCSessionDescriptionInit> = {
+    clientId: useSocketIo.getState().socket?.id || "",
+    type: "offer",
+    payload: offer,
+  }
 
-  socket.socket?.on(
-    "received_candidate",
-    async (candidate: RTCIceCandidateInit) => {
-      console.log("Received ICE candidate:", candidate)
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate))
-      } catch (error) {
-        console.error("Error adding received ICE candidate:", error)
+  useSocketIo.getState().socket?.emit("send_offer", chatRoomId, offerMessage)
+
+  useSocketIo
+    .getState()
+    .socket?.on(
+      "received_offer",
+      async (data: RtcWsMessage<RTCSessionDescriptionInit>) => {
+        console.log("Received offer message:", data)
+        if (
+          data.clientId === useSocketIo.getState().socket?.id ||
+          data.type !== "offer"
+        ) {
+          return
+        }
+
+        const offer = new RTCSessionDescription(data.payload)
+        await pc.setRemoteDescription(offer)
+        const answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+
+        const answerMessage: RtcWsMessage<RTCSessionDescriptionInit> = {
+          clientId: useSocketIo.getState().socket?.id || "",
+          type: "answer",
+          payload: answer,
+        }
+
+        useSocketIo
+          .getState()
+          .socket?.emit("send_answer", chatRoomId, answerMessage)
       }
-    }
-  )
+    )
+
+  useSocketIo
+    .getState()
+    .socket?.on(
+      "received_answer",
+      async (data: RtcWsMessage<RTCSessionDescriptionInit>) => {
+        if (
+          data.clientId === useSocketIo.getState().socket?.id ||
+          data.type !== "answer"
+        ) {
+          return
+        }
+
+        const answer = new RTCSessionDescription(data.payload)
+        await pc.setRemoteDescription(answer)
+
+        // Now that the remote description is set, we can process any queued ICE candidates
+        while (iceCandidateQueue.length > 0) {
+          const candidate = iceCandidateQueue.shift()!
+          await pc.addIceCandidate(candidate)
+        }
+      }
+    )
+
+  useSocketIo
+    .getState()
+    .socket?.on(
+      "received_candidate",
+      async (data: RtcWsMessage<RTCIceCandidateInit>) => {
+        if (
+          data.clientId === useSocketIo.getState().socket?.id ||
+          data.type !== "candidate"
+        ) {
+          return
+        }
+
+        const candidate = new RTCIceCandidate(data.payload)
+
+        if (
+          peerRef.current?.remoteDescription &&
+          peerRef.current?.remoteDescription.type
+        ) {
+          // If ready, add it immediately
+          await peerRef.current?.addIceCandidate(candidate)
+        } else {
+          // If not ready, tuck it away for later
+          iceCandidateQueue.push(candidate)
+        }
+      }
+    )
 }
 
 const usePeer = (props: UsePeerProps) => {
@@ -89,10 +173,12 @@ const usePeer = (props: UsePeerProps) => {
     if (props.localStreams.length === 0) return
     // Initialize the RTCPeerConnection and set up event listeners
 
-    if (!socket.socket) return
+    if (!socket.socket || !props.roomId) {
+      return
+    }
 
     bootstrapPeerConnection(
-      socket,
+      props.roomId,
       peerRef,
       props.localStreams,
       props.onRemoteStream
@@ -104,7 +190,7 @@ const usePeer = (props: UsePeerProps) => {
       peerRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.localStreams.length, socket.socket])
+  }, [props.localStreams.length, socket.socket, props.roomId])
 }
 
 export default usePeer

@@ -10,3 +10,9 @@ export interface StreamVideoState {
   isLocal?: boolean
   type: StreamVideoEntityType
 }
+
+export interface RtcWsMessage<T> {
+  clientId: string
+  type: "offer" | "answer" | "candidate"
+  payload: T
+}
