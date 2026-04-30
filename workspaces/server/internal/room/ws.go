@@ -1,25 +1,37 @@
 package room
 
 import (
-	"log"
+	"fmt"
 
+	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	socketio "github.com/googollee/go-socket.io"
 )
 
 func RoomWsBootstrap(io *socketio.Server) {
 
-	io.OnConnect("/", func(s socketio.Conn) error {
-		log.Println("connected:", s.ID())
+	// 1. Handle Connection
+	io.OnConnect("/", func(c socketio.Conn) error {
+		fmt.Printf("New client connected: %s\n", c.ID())
+		logger.Sugar.Infof("Backend connected: %s", c.ID())
 		return nil
 	})
 
-	io.OnEvent("/", "join", func(s socketio.Conn, room string) {
-		s.Join(room)
-		log.Println("join room:", room)
+	// join room
+	io.OnEvent("/", "join_room", func(c socketio.Conn, roomID string) {
+		logger.Sugar.Infof("Client %s joining room: %s", c.ID(), roomID)
+		c.Join(roomID)
 	})
 
-	io.OnDisconnect("/", func(s socketio.Conn, reason string) {
-		log.Println("disconnect:", s.ID())
+	// leave room
+	io.OnEvent("/", "leave_room", func(c socketio.Conn, roomID string) {
+		logger.Sugar.Infof("Client %s leaving room: %s", c.ID(), roomID)
+		c.Leave(roomID)
+	})
+
+	// send candidate to room
+	io.OnEvent("/", "send_candidate", func(c socketio.Conn, roomID string, candidate interface{}) {
+		logger.Sugar.Infof("Received candidate from client %s for room %s: %v", c.ID(), roomID, candidate)
+		io.BroadcastToRoom("/", roomID, "receive_candidate", candidate)
 	})
 
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,14 +13,18 @@ import (
 	apperror "github.com/NishLy/go-fiber-boilerplate/internal/error"
 	"github.com/NishLy/go-fiber-boilerplate/internal/middleware"
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/database"
+	"github.com/NishLy/go-fiber-boilerplate/internal/room"
 	"github.com/NishLy/go-fiber-boilerplate/internal/routes"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
-	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/compress"
 	"github.com/gofiber/fiber/v3/middleware/helmet"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 	socketio "github.com/googollee/go-socket.io"
+	"github.com/googollee/go-socket.io/engineio"
+	"github.com/googollee/go-socket.io/engineio/transport"
+	"github.com/googollee/go-socket.io/engineio/transport/polling"
+	"github.com/googollee/go-socket.io/engineio/transport/websocket"
 	"go.uber.org/zap"
 )
 
@@ -33,11 +38,45 @@ func main() {
 	}
 
 	fiberApp := fiber.New(fiber.Config{ErrorHandler: apperror.ErrorHandler})
-	io := socketio.NewServer(nil)
+	io := socketio.NewServer(&engineio.Options{
+		Transports: []transport.Transport{
+			&polling.Transport{
+				CheckOrigin: func(r *http.Request) bool { return true },
+			},
+			&websocket.Transport{
+				CheckOrigin: func(r *http.Request) bool { return true },
+			},
+		},
+	})
+
+	room.RoomWsBootstrap(io)
+	go func() {
+		if err := io.Serve(); err != nil {
+			logger.Sugar.Fatal("Socket.IO server error:", zap.Error(err))
+		}
+	}()
 	defer io.Close()
 
-	// Register Socket.IO server as a handler for the "/socket.io/*" route
-	fiberApp.All("/socket.io/*", adaptor.HTTPHandler(io))
+	// Use adaptor.HTTPHandler with the full mux, not just io directly
+	mux := http.NewServeMux()
+	mux.HandleFunc("/socket.io/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		io.ServeHTTP(w, r)
+	})
+
+	// Run both servers concurrently
+	go func() {
+		logger.Sugar.Info("Starting Socket.IO server on :8001")
+		if err := http.ListenAndServe(":8001", mux); err != nil {
+			logger.Sugar.Fatal("Socket.IO server error:", zap.Error(err))
+		}
+	}()
 
 	// Start a goroutine to periodically clean up idle database connections
 	database.CleanupDBs(time.Second * 60)
