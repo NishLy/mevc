@@ -1,10 +1,12 @@
 import useCurrentRoom from "@/features/stream/state"
+import { StreamVideoEntityType } from "@/features/stream/types/stream"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   AudioOpenSettings,
   CameraOpenSettings,
-  StreamVideoEntityType,
-} from "@/features/stream/types/stream"
-import { useCallback, useEffect, useRef, useState } from "react"
+  StreamHookReturn,
+  UseStreamProps,
+} from "../types/hooks"
 
 // screen sharing sections
 async function requestScreenShare() {
@@ -98,11 +100,8 @@ async function startStream(
 
   return finalStream
 }
-interface UseStreamProps {
-  initateWithAnyCameraExisting?: boolean
-}
 
-const useStream = (props?: UseStreamProps) => {
+const useStream = (props?: UseStreamProps): StreamHookReturn => {
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>(
     []
   )
@@ -280,20 +279,24 @@ const useStream = (props?: UseStreamProps) => {
   return {
     availableCameras,
     availableAudioDevices,
-    selectedCameraId,
-    selectedAudioDeviceId,
-    currentMediaStream,
-    isMuted,
-    isVideoEnabled,
-    handleCameraChange,
-    toggleMute,
-    toggleVideoStream,
-    setOptions,
-    handleAudioDeviceChange,
-    startScreenShare,
-    currentScreenShareStream,
-    stopScreenShare,
-    isCurrentlyScreenSharing,
+    currrentState: {
+      selectedCameraId,
+      selectedAudioDeviceId,
+      currentMediaStream,
+      isMuted,
+      isVideoEnabled,
+      currentScreenShareStream,
+      isCurrentlyScreenSharing,
+    },
+    handlers: {
+      handleCameraDeviceChange: handleCameraChange,
+      toggleAudioMute: toggleMute,
+      toggleVideoOutput: toggleVideoStream,
+      handleAudioDeviceChange: handleAudioDeviceChange,
+      startScreenShare,
+      stopScreenShare,
+      setOptions: setOptions,
+    },
   }
 }
 

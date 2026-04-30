@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import useStream from "@/hooks/stream"
+import useStream from "@/features/stream/hooks/stream"
 import { Button } from "@workspace/ui/components/button"
 import {
   Select,
@@ -131,18 +131,22 @@ export default function ControlBar() {
   const {
     availableCameras,
     availableAudioDevices,
-    selectedCameraId,
-    selectedAudioDeviceId,
-    isMuted,
-    isVideoEnabled,
-    handleCameraChange,
-    handleAudioDeviceChange,
-    toggleMute,
-    toggleVideoStream,
-    startScreenShare,
-    stopScreenShare,
-    isCurrentlyScreenSharing,
-    currentScreenShareStream,
+    currrentState: {
+      selectedCameraId,
+      selectedAudioDeviceId,
+      isMuted,
+      isVideoEnabled,
+      currentScreenShareStream,
+      isCurrentlyScreenSharing,
+    },
+    handlers: {
+      handleCameraDeviceChange,
+      handleAudioDeviceChange,
+      toggleAudioMute,
+      toggleVideoOutput,
+      stopScreenShare,
+      startScreenShare,
+    },
   } = useStream({ initateWithAnyCameraExisting: true })
 
   const timer = useTimer()
@@ -184,7 +188,7 @@ export default function ControlBar() {
       <Select
         value={selectedCameraId || ""}
         onValueChange={(value) =>
-          handleCameraChange(value, {
+          handleCameraDeviceChange(value, {
             height: { ideal: 720 },
             width: { ideal: 1280 },
           })
@@ -234,7 +238,7 @@ export default function ControlBar() {
             label={isMuted ? "Unmute" : "Mute"}
             tooltip={isMuted ? "Unmute microphone" : "Mute microphone"}
             danger={isMuted}
-            onClick={toggleMute}
+            onClick={toggleAudioMute}
             caretContent={audioCaretContent}
           />
 
@@ -250,7 +254,7 @@ export default function ControlBar() {
             label={isVideoEnabled ? "Stop Video" : "Start Video"}
             tooltip={isVideoEnabled ? "Turn off camera" : "Turn on camera"}
             danger={!isVideoEnabled}
-            onClick={toggleVideoStream}
+            onClick={toggleVideoOutput}
             caretContent={videoCaretContent}
           />
 
