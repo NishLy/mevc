@@ -18,13 +18,6 @@ export default function VideosGrid() {
   const localStreams = useMeet((state) => state.localStreams)
   const remoteStreams = useMeet((state) => state.remoteStreams)
 
-  console.log(
-    "Rendering VideoGrid with localStreams:",
-    localStreams,
-    "and remoteStreams:",
-    remoteStreams
-  )
-
   const streams = useMemo(
     () => [...localStreams, ...remoteStreams],
     [localStreams, remoteStreams]
