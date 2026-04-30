@@ -15,6 +15,7 @@ import (
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/database"
 	"github.com/NishLy/go-fiber-boilerplate/internal/room"
 	"github.com/NishLy/go-fiber-boilerplate/internal/routes"
+	rtc "github.com/NishLy/go-fiber-boilerplate/internal/webrtc"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/compress"
@@ -56,6 +57,8 @@ func main() {
 		}
 	}()
 	defer io.Close()
+
+	go rtc.WebRTCBootstrap(io)
 
 	// Use adaptor.HTTPHandler with the full mux, not just io directly
 	mux := http.NewServeMux()
