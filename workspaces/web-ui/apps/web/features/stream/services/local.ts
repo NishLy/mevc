@@ -38,6 +38,7 @@ export class MediaStreamController {
   currentAudioDeviceId: string | null = null
 
   isCurrentlySharingScreen = false
+  isCurrentlyRecording = false
 
   onDevicesUpdatedCallback?: (
     availableVideoDevices: MediaDeviceInfo[],
@@ -50,6 +51,7 @@ export class MediaStreamController {
   onAudioDeviceChangeCallback?: (deviceId: string) => void
   onScreenShareToggleCallback?: (isSharing: boolean) => void
   onLocalStreamUpdateCallback?: (streams: MediaStreamItem[]) => void
+  onRecordingToggleCallback?: (isRecording: boolean) => void
 
   currentLocalStreamState = {
     videoEnabled: true,
@@ -372,5 +374,64 @@ export class MediaStreamController {
     this.currentLocalStream = null
     this.currentScreenShareStream = null
     this.isCurrentlySharingScreen = false
+    this.recordedChunks = []
+  }
+
+  private recordedChunks: Blob[] = []
+  private mediaRecorder: MediaRecorder | null = null
+
+  async startRecording() {
+    const displayMediaOptions = {
+      video: {
+        displaySurface: "browser",
+      },
+      audio: true,
+      preferCurrentTab: true,
+    }
+
+    const stream =
+      await navigator.mediaDevices.getDisplayMedia(displayMediaOptions)
+
+    // 1. Initialize the recorder
+    this.mediaRecorder = new MediaRecorder(stream, { mimeType: "video/webm" })
+
+    // 2. Collect data as it becomes available
+    this.mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        this.recordedChunks.push(event.data)
+      }
+    }
+
+    this.mediaRecorder.onstop = this.saveRecording.bind(this)
+    this.mediaRecorder.start()
+    this.isCurrentlyRecording = true
+    if (this.onRecordingToggleCallback) {
+      this.onRecordingToggleCallback(true)
+    }
+  }
+
+  stopRecording() {
+    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
+      this.mediaRecorder.stop()
+    }
+  }
+
+  private saveRecording() {
+    const blob = new Blob(this.recordedChunks, { type: "video/webm" })
+    const url = URL.createObjectURL(blob)
+
+    // Trigger automatic download
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `recording_${new Date().toISOString()}.webm`
+    a.click()
+
+    // Cleanup
+    URL.revokeObjectURL(url)
+    this.recordedChunks = []
+    this.isCurrentlyRecording = false
+    if (this.onRecordingToggleCallback) {
+      this.onRecordingToggleCallback(false)
+    }
   }
 }

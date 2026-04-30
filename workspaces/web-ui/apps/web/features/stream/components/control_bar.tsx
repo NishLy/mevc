@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@workspace/ui/components/button"
 import {
   Select,
@@ -34,9 +34,21 @@ import {
   MoreVertical,
   Phone,
   ChevronUp,
+  MoreHorizontal,
+  Maximize2,
+  Pin,
+  VolumeX,
 } from "lucide-react"
 import classNames from "classnames"
 import useMeet from "../state/meet"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@workspace/ui/components/dropdown-menu"
+import { MenuItemDef } from "../types/ui"
 
 function useTimer() {
   const [seconds, setSeconds] = useState(0)
@@ -129,8 +141,32 @@ function ControlButton({
 
 export default function ControlBar() {
   const controller = useMeet((state) => state.controller)
-  const localController = useMeet((state) => state.localController)
+  const localController = useMeet((state) => state.controllerState)
   const timer = useTimer()
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const LOCAL_MENU: MenuItemDef[] = useMemo(
+    () => [
+      {
+        icon: !localController.isCurrentlyRecording ? (
+          <Video className="h-3.5 w-3.5" />
+        ) : (
+          <VideoOff className="h-3.5 w-3.5 text-red-500" />
+        ),
+        label: !localController.isCurrentlyRecording
+          ? "Start Recording"
+          : "Stop Recording",
+        onClick: () => {
+          if (!localController.isCurrentlyRecording) {
+            controller?.startRecording()
+          } else {
+            controller?.stopRecording()
+          }
+        },
+      },
+    ],
+    [controller, localController.isCurrentlyRecording]
+  )
 
   const audioCaretContent = (
     <div className="py-2">
@@ -328,23 +364,30 @@ export default function ControlBar() {
           />
 
           {/* More — dummy */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 rounded-xl text-white/80 hover:bg-white/10 hover:text-white"
-              >
-                <MoreVertical className="h-4 w-4" />
+          {/* More menu */}
+          <DropdownMenu onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button className="flex h-10 w-10 items-center justify-center rounded-md bg-black/50 text-white/80 backdrop-blur-sm transition hover:bg-black/70 hover:text-white data-[state=open]:bg-black/70 data-[state=open]:text-white">
+                <MoreHorizontal className="h-3.5 w-3.5" />
               </Button>
-            </TooltipTrigger>
-            <TooltipContent
-              side="top"
-              className="border-white/10 bg-[#1e1e28] text-xs text-white"
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              side="bottom"
+              align="end"
+              className="w-52 border-white/10 bg-zinc-900/95 text-white shadow-2xl backdrop-blur-md"
             >
-              More options
-            </TooltipContent>
-          </Tooltip>
+              {LOCAL_MENU.map((item) => (
+                <DropdownMenuItem
+                  key={item.label}
+                  className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-white/80 focus:bg-white/10 focus:text-white"
+                  onClick={item.onClick}
+                >
+                  <span className="text-white/50">{item.icon}</span>
+                  {item.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <div className="mx-2 h-8 w-px bg-white/10" />
 

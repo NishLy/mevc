@@ -9,7 +9,7 @@ interface MeetState {
   remoteStreams: MediaStreamItem[]
   pinnedStreamIds: string[]
   controller: MediaStreamController | null
-  localController: {
+  controllerState: {
     videoEnabled: boolean
     audioEnabled: boolean
     availableVideoDevices: MediaDeviceInfo[]
@@ -17,6 +17,7 @@ interface MeetState {
     currentVideoDeviceId: string | null
     currentAudioDeviceId: string | null
     isCurrentlySharingScreen?: boolean
+    isCurrentlyRecording?: boolean
   }
   setController: (controller: MediaStreamController) => void
   setPinnedStreamIds: (ids: string[]) => void
@@ -29,7 +30,7 @@ const useMeet = create<MeetState>((set) => ({
   remoteStreams: [],
   pinnedStreamIds: [],
   controller: null,
-  localController: {
+  controllerState: {
     videoEnabled: true,
     audioEnabled: true,
     availableVideoDevices: [],
@@ -37,54 +38,52 @@ const useMeet = create<MeetState>((set) => ({
     currentVideoDeviceId: null,
     currentAudioDeviceId: null,
     isCurrentlySharingScreen: false,
+    isCurrentlyRecording: false,
   },
   setPinnedStreamIds: (ids: string[]) => set({ pinnedStreamIds: ids }),
   setController: (controller: MediaStreamController) => {
     controller.onVideoToggleCallback = (enabled: boolean) =>
       set((state) => ({
-        localController: {
-          ...state.localController,
+        controllerState: {
+          ...state.controllerState,
           videoEnabled: enabled,
         },
       }))
     controller.onAudioToggleCallback = (enabled: boolean) =>
       set((state) => ({
-        localController: {
-          ...state.localController,
+        controllerState: {
+          ...state.controllerState,
           audioEnabled: enabled,
         },
       }))
     controller.onVideoDeviceChangeCallback = (deviceId: string) =>
       set((state) => ({
-        localController: {
-          ...state.localController,
+        controllerState: {
+          ...state.controllerState,
           currentVideoDeviceId: deviceId,
         },
       }))
     controller.onAudioDeviceChangeCallback = (deviceId: string) =>
       set((state) => ({
-        localController: {
-          ...state.localController,
+        controllerState: {
+          ...state.controllerState,
           currentAudioDeviceId: deviceId,
         },
       }))
     set({ controller })
     controller.onScreenShareToggleCallback = (isSharing: boolean) => {
       set((state) => ({
-        localController: {
-          ...state.localController,
+        controllerState: {
+          ...state.controllerState,
           isCurrentlySharingScreen: isSharing,
         },
       }))
     }
     controller.onLocalStreamUpdateCallback = (streams: MediaStreamItem[]) => {
       const newStreams = [...streams]
-
-      console.log("Updating local streams in state", newStreams)
-
       set((state) => ({
-        localController: {
-          ...state.localController,
+        controllerState: {
+          ...state.controllerState,
           localStreams: newStreams,
         },
         localStreams: newStreams,
@@ -95,10 +94,19 @@ const useMeet = create<MeetState>((set) => ({
       availableAudioDevices: MediaDeviceInfo[]
     ) => {
       set((state) => ({
-        localController: {
-          ...state.localController,
+        controllerState: {
+          ...state.controllerState,
           availableVideoDevices,
           availableAudioDevices,
+        },
+      }))
+    }
+
+    controller.onRecordingToggleCallback = (isRecording: boolean) => {
+      set((state) => ({
+        controllerState: {
+          ...state.controllerState,
+          isCurrentlyRecording: isRecording,
         },
       }))
     }
