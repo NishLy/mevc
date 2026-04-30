@@ -1,9 +1,9 @@
 "use client"
 
 import classNames from "classnames"
-import useCurrentRoom from "../state"
+import { useMemo } from "react"
 import VideoTile from "./video_tile"
-import { StreamVideoState } from "../types/stream"
+import useMeet from "../state/meet"
 
 const calculateGridColumns = (count: number) => {
   if (count === 1) return "grid-cols-1"
@@ -14,11 +14,32 @@ const calculateGridColumns = (count: number) => {
   return "grid-cols-4"
 }
 
-export default function VideosGrid({}: {}) {
-  const streams = useCurrentRoom((state) => state.videosStreams)
-  const pinnedStreamIds = useCurrentRoom((state) => state.pinnedStreamIds)
-  const unpinnedStreams = streams.filter((s) => !pinnedStreamIds.includes(s.id))
-  const pinnedStreams = streams.filter((s) => pinnedStreamIds.includes(s.id))
+export default function VideosGrid() {
+  const localStreams = useMeet((state) => state.localStreams)
+  const remoteStreams = useMeet((state) => state.remoteStreams)
+
+  console.log(
+    "Rendering VideoGrid with localStreams:",
+    localStreams,
+    "and remoteStreams:",
+    remoteStreams
+  )
+
+  const streams = useMemo(
+    () => [...localStreams, ...remoteStreams],
+    [localStreams, remoteStreams]
+  )
+
+  const pinnedStreamIds = useMeet((state) => state.pinnedStreamIds)
+
+  const pinnedStreams = useMemo(
+    () => streams.filter((s) => pinnedStreamIds.includes(s.id)),
+    [streams, pinnedStreamIds]
+  )
+  const unpinnedStreams = useMemo(
+    () => streams.filter((s) => !pinnedStreamIds.includes(s.id)),
+    [streams, pinnedStreamIds]
+  )
 
   return (
     <>
@@ -32,7 +53,7 @@ export default function VideosGrid({}: {}) {
         )}
       >
         {unpinnedStreams.map((s) => (
-          <VideoTile key={s.id} {...s} />
+          <VideoTile key={s.streamId} {...s} />
         ))}
       </div>
 
@@ -45,7 +66,7 @@ export default function VideosGrid({}: {}) {
           )}
         >
           {pinnedStreams.map((s) => (
-            <VideoTile key={s.id} {...s} />
+            <VideoTile key={s.streamId} {...s} />
           ))}
         </div>
       )}

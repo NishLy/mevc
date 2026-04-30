@@ -23,8 +23,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu"
-import { StreamVideoState } from "../types/stream"
-import useCurrentRoom from "../state"
+import { MediaStreamItem } from "../types/service"
+import useMeet from "../state/meet"
 
 interface MenuItemDef {
   icon: React.ReactNode
@@ -72,7 +72,7 @@ const LOCAL_MENU: MenuItemDef[] = [
   { icon: <VolumeX className="h-3.5 w-3.5" />, label: "Mute original audio" },
 ]
 
-function VideoTile(props: StreamVideoState) {
+function VideoTile(props: MediaStreamItem) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [hovered, setHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -81,7 +81,7 @@ function VideoTile(props: StreamVideoState) {
     if (videoRef.current && props.stream) {
       videoRef.current.srcObject = props.stream
     }
-  }, [props.stream])
+  }, [props.stream, props.streamId])
 
   const menuItems = props.isLocal ? LOCAL_MENU : REMOTE_MENU
   const dangerItems = props.isLocal ? [] : REMOTE_MENU_DANGER
@@ -89,16 +89,18 @@ function VideoTile(props: StreamVideoState) {
 
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  const room = useCurrentRoom()
-  const isPinned = room.pinnedStreamIds.includes(props.id)
+  const pinnedStreamIds = useMeet((state) => state.pinnedStreamIds)
+  const isPinned = pinnedStreamIds.includes(props.id)
 
   const togglePin = () => {
     if (isPinned) {
-      room.setPinnedStreamIds(
-        room.pinnedStreamIds.filter((id) => id !== props.id)
-      )
+      useMeet.setState({
+        pinnedStreamIds: pinnedStreamIds.filter((id) => id !== props.id),
+      })
     } else {
-      room.setPinnedStreamIds([...room.pinnedStreamIds, props.id])
+      useMeet.setState({
+        pinnedStreamIds: [...pinnedStreamIds, props.id],
+      })
     }
   }
 
@@ -166,7 +168,7 @@ function VideoTile(props: StreamVideoState) {
       {/* gradient scrim — only visible on hover */}
       <div
         className={classNames(
-          "absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 transition-opacity duration-200",
+          "absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-black/20 transition-opacity duration-200",
           showOverlay ? "opacity-100" : "opacity-0"
         )}
       />

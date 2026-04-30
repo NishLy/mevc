@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import useStream from "@/features/stream/hooks/stream"
 import { Button } from "@workspace/ui/components/button"
 import {
   Select,
@@ -37,6 +36,7 @@ import {
   ChevronUp,
 } from "lucide-react"
 import classNames from "classnames"
+import useMeet from "../state/meet"
 
 function useTimer() {
   const [seconds, setSeconds] = useState(0)
@@ -128,27 +128,8 @@ function ControlButton({
 }
 
 export default function ControlBar() {
-  const {
-    availableCameras,
-    availableAudioDevices,
-    currrentState: {
-      selectedCameraId,
-      selectedAudioDeviceId,
-      isMuted,
-      isVideoEnabled,
-      currentScreenShareStream,
-      isCurrentlyScreenSharing,
-    },
-    handlers: {
-      handleCameraDeviceChange,
-      handleAudioDeviceChange,
-      toggleAudioMute,
-      toggleVideoOutput,
-      stopScreenShare,
-      startScreenShare,
-    },
-  } = useStream({ initateWithAnyCameraExisting: true })
-
+  const controller = useMeet((state) => state.controller)
+  const localController = useMeet((state) => state.localController)
   const timer = useTimer()
 
   const audioCaretContent = (
@@ -157,16 +138,16 @@ export default function ControlBar() {
         Microphone
       </p>
       <Select
-        value={selectedAudioDeviceId || ""}
+        value={localController?.currentAudioDeviceId || ""}
         onValueChange={(value) =>
-          handleAudioDeviceChange(value, { echoCancellation: true })
+          controller?.changeAudioDevice(value, { echoCancellation: true })
         }
       >
         <SelectTrigger className="mx-2 mb-1 w-[calc(100%-16px)] border-white/10 bg-white/5 text-sm text-white">
           <SelectValue placeholder="Select microphone" />
         </SelectTrigger>
         <SelectContent className="border-white/10 bg-[#1e1e28] text-white">
-          {availableAudioDevices.map((device) => (
+          {localController?.availableAudioDevices.map((device) => (
             <SelectItem
               key={device.deviceId}
               value={device.deviceId}
@@ -186,9 +167,9 @@ export default function ControlBar() {
         Camera
       </p>
       <Select
-        value={selectedCameraId || ""}
+        value={localController?.currentVideoDeviceId || ""}
         onValueChange={(value) =>
-          handleCameraDeviceChange(value, {
+          controller?.changeVideoDevice(value, {
             height: { ideal: 720 },
             width: { ideal: 1280 },
           })
@@ -198,7 +179,7 @@ export default function ControlBar() {
           <SelectValue placeholder="Select camera" />
         </SelectTrigger>
         <SelectContent className="border-white/10 bg-[#1e1e28] text-white">
-          {availableCameras.map((camera) => (
+          {localController?.availableVideoDevices.map((camera) => (
             <SelectItem
               key={camera.deviceId}
               value={camera.deviceId}
@@ -229,32 +210,40 @@ export default function ControlBar() {
           {/* Mute */}
           <ControlButton
             icon={
-              isMuted ? (
-                <MicOff className="h-4 w-4" />
+              controller?.currentLocalStreamState.audioEnabled ? (
+                <Mic className="h-4 w-4" />
               ) : (
                 <Mic className="h-4 w-4" />
               )
             }
-            label={isMuted ? "Unmute" : "Mute"}
-            tooltip={isMuted ? "Unmute microphone" : "Mute microphone"}
-            danger={isMuted}
-            onClick={toggleAudioMute}
+            label={localController?.audioEnabled ? "Unmute" : "Mute"}
+            tooltip={
+              localController?.audioEnabled
+                ? "Unmute microphone"
+                : "Mute microphone"
+            }
+            danger={!localController?.audioEnabled}
+            onClick={controller?.toggleAudio}
             caretContent={audioCaretContent}
           />
 
           {/* Camera */}
           <ControlButton
             icon={
-              isVideoEnabled ? (
+              localController?.videoEnabled ? (
                 <Video className="h-4 w-4" />
               ) : (
                 <VideoOff className="h-4 w-4" />
               )
             }
-            label={isVideoEnabled ? "Stop Video" : "Start Video"}
-            tooltip={isVideoEnabled ? "Turn off camera" : "Turn on camera"}
-            danger={!isVideoEnabled}
-            onClick={toggleVideoOutput}
+            label={localController?.videoEnabled ? "Stop Video" : "Start Video"}
+            tooltip={
+              localController?.videoEnabled
+                ? "Turn off camera"
+                : "Turn on camera"
+            }
+            danger={!localController?.videoEnabled}
+            onClick={controller?.toggleVideo}
             caretContent={videoCaretContent}
           />
 
@@ -297,18 +286,22 @@ export default function ControlBar() {
           {/* Share Screen */}
           <ControlButton
             icon={<MonitorUp className="h-4 w-4" />}
-            label={isCurrentlyScreenSharing ? "Stop Sharing" : "Share Screen"}
+            label={
+              localController?.isCurrentlySharingScreen
+                ? "Stop Sharing"
+                : "Share Screen"
+            }
             tooltip={
-              isCurrentlyScreenSharing
+              localController?.isCurrentlySharingScreen
                 ? "Stop sharing your screen"
                 : "Share your screen"
             }
-            active={isCurrentlyScreenSharing}
+            active={localController?.isCurrentlySharingScreen}
             onClick={() => {
-              if (isCurrentlyScreenSharing) {
-                stopScreenShare(currentScreenShareStream!)
+              if (localController?.isCurrentlySharingScreen) {
+                controller?.stopScreenShare()
               } else {
-                startScreenShare()
+                controller?.startScreenShare()
               }
             }}
           />
