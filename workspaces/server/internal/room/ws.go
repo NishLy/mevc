@@ -34,4 +34,8 @@ func RoomWsBootstrap(io *socketio.Server) {
 		io.BroadcastToRoom("/", roomID, "receive_candidate", candidate)
 	})
 
+	io.OnDisconnect("/", func(s socketio.Conn, reason string) {
+		logger.Sugar.Infof("Client disconnected: %s, reason: %s", s.ID(), reason)
+	})
+
 }

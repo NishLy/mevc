@@ -1,5 +1,5 @@
-import ioInstance from "@/lib/socket.io"
-import { useRef, useEffect } from "react"
+import useSocketIo, { socketIoState } from "@/hooks/socket.io"
+import { useRef, useEffect, use, useState } from "react"
 
 interface UsePeerProps {
   roomId: string | null
@@ -18,6 +18,7 @@ interface PeerHookReturn {
 }
 
 const bootstrapPeerConnection = async (
+  socket: socketIoState,
   peerRef: React.MutableRefObject<RTCPeerConnection | null>,
   localStreams: MediaStream[],
   onRemoteStream?: (stream: MediaStream) => void
@@ -31,7 +32,7 @@ const bootstrapPeerConnection = async (
   pc.onicecandidate = (event) => {
     if (event.candidate) {
       console.log("ICE Candidate found:", event.candidate)
-      ioInstance.emit("send_candidate", event.candidate)
+      socket.socket?.emit("send_candidate", event.candidate)
     }
   }
 
@@ -51,9 +52,9 @@ const bootstrapPeerConnection = async (
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
 
-  ioInstance.emit("send_offer", offer)
+  socket.socket?.emit("send_offer", offer)
 
-  ioInstance.on(
+  socket.socket?.on(
     "received_candidate",
     async (candidate: RTCIceCandidateInit) => {
       console.log("Received ICE candidate:", candidate)
@@ -69,27 +70,41 @@ const bootstrapPeerConnection = async (
 const usePeer = (props: UsePeerProps) => {
   const peerRef = useRef<RTCPeerConnection | null>(null)
 
+  const socket = useSocketIo()
+
   useEffect(() => {
-    console.log("Peer hook initialized with roomId:", props.roomId)
-    if (!props.roomId) return
+    if (!props.roomId || !socket.socket) return
+
     // Join the room via Socket.IO
-    ioInstance.emit("join_room", props.roomId)
+    socket.socket?.emit("join_room", props.roomId)
+
     return () => {
       //   ioInstance.emit("leave_room", props.roomId)
     }
-  }, [props.roomId])
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.roomId, socket.socket?.id])
 
   useEffect(() => {
     if (props.localStreams.length === 0) return
     // Initialize the RTCPeerConnection and set up event listeners
-    bootstrapPeerConnection(peerRef, props.localStreams, props.onRemoteStream)
+
+    if (!socket.socket) return
+
+    bootstrapPeerConnection(
+      socket,
+      peerRef,
+      props.localStreams,
+      props.onRemoteStream
+    )
 
     // Clean up the peer connection on unmount
     return () => {
       peerRef.current?.close()
       peerRef.current = null
     }
-  }, [props.localStreams, props.onRemoteStream])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.localStreams.length, socket.socket])
 }
 
 export default usePeer

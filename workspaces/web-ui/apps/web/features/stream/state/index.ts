@@ -3,7 +3,6 @@ import { StreamVideoEntityType, StreamVideoState } from "../types/stream"
 
 interface currentRoomState {
   roomId: string | null
-  peerId: string
   setRoomId: (id: string | null) => void
   videosStreams: StreamVideoState[]
   pinnedStreamIds: string[]
@@ -13,7 +12,6 @@ interface currentRoomState {
 }
 
 const useCurrentRoom = create<currentRoomState>((set) => ({
-  peerId: crypto.randomUUID(),
   roomId: "default-room", // Default room for testing
   setRoomId: (id) => set({ roomId: id }),
   videosStreams: [

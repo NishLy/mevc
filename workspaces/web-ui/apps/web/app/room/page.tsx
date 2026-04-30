@@ -1,27 +1,21 @@
-"use client"
+import Room from "@/features/stream/components/room"
 
-import ControlBar from "@/features/stream/components/control_bar"
-import VideosGrid from "@/features/stream/components/video_grid"
-import usePeer from "@/features/stream/hooks/peer"
-import useCurrentRoom from "@/features/stream/state"
-import { useEffect, useState } from "react"
-
-export default function Room() {
-  const room = useCurrentRoom()
-
-  const peer = usePeer({
-    roomId: room.roomId,
-    peerId: room.peerId,
-    localStreams: room.getLocalStreams(),
-    onRemoteStream: (stream) => {
-      console.log("Received remote stream:", stream)
-    },
-  })
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  // Await the searchParams object
+  const filters = await searchParams
+  const roomId = filters.roomId
 
   return (
     <div>
-      <VideosGrid streams={room.videosStreams} />
-      <ControlBar />
+      {roomId ? (
+        <Room roomId={typeof roomId === "string" ? roomId : "default-room"} />
+      ) : (
+        <p>No room ID provided</p>
+      )}
     </div>
   )
 }
