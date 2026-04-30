@@ -12,7 +12,13 @@ export interface StreamVideoState {
 }
 
 export interface RtcWsMessage<T> {
-  clientId: string
+  ws_id: string
+  client: ClientPeerProps
   type: "offer" | "answer" | "candidate"
   payload: T
+}
+
+export interface ClientPeerProps {
+  id: string
+  name: string
 }

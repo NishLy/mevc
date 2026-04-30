@@ -1,12 +1,12 @@
 import useSocketIo, { socketIoState } from "@/hooks/socket.io"
 import { useRef, useEffect, use, useState } from "react"
-import { RtcWsMessage } from "../types/stream"
+import { ClientPeerProps, RtcWsMessage } from "../types/stream"
 
 interface UsePeerProps {
   roomId: string | null
-  peerId: string
+  client: ClientPeerProps
   localStreams: MediaStream[]
-  onRemoteStream: (stream: MediaStream) => void
+  onRemoteStream: (client: ClientPeerProps, stream: MediaStream) => void
 }
 
 interface PeerHookReturn {
@@ -21,10 +21,11 @@ interface PeerHookReturn {
 const iceCandidateQueue: RTCIceCandidate[] = []
 
 const bootstrapPeerConnection = async (
+  client: ClientPeerProps,
   chatRoomId: string,
   peerRef: React.MutableRefObject<RTCPeerConnection | null>,
   localStreams: MediaStream[],
-  onRemoteStream?: (stream: MediaStream) => void
+  onRemoteStream?: (client: ClientPeerProps, stream: MediaStream) => void
 ) => {
   const pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }], // Always include a STUN server
@@ -35,7 +36,8 @@ const bootstrapPeerConnection = async (
   pc.onicecandidate = (event) => {
     if (event.candidate) {
       const candidateMessage: RtcWsMessage<RTCIceCandidateInit> = {
-        clientId: useSocketIo.getState().socket?.id || "",
+        ws_id: useSocketIo.getState().socket?.id || "",
+        client: client,
         type: "candidate",
         payload: event.candidate,
       }
@@ -48,7 +50,7 @@ const bootstrapPeerConnection = async (
 
   pc.ontrack = (event) => {
     if (event.streams && event.streams[0]) {
-      onRemoteStream?.(event.streams[0])
+      onRemoteStream?.(client, event.streams[0])
     }
   }
 
@@ -63,7 +65,8 @@ const bootstrapPeerConnection = async (
   await pc.setLocalDescription(offer)
 
   const offerMessage: RtcWsMessage<RTCSessionDescriptionInit> = {
-    clientId: useSocketIo.getState().socket?.id || "",
+    ws_id: useSocketIo.getState().socket?.id || "",
+    client: client,
     type: "offer",
     payload: offer,
   }
@@ -75,9 +78,8 @@ const bootstrapPeerConnection = async (
     .socket?.on(
       "received_offer",
       async (data: RtcWsMessage<RTCSessionDescriptionInit>) => {
-        console.log("Received offer message:", data)
         if (
-          data.clientId === useSocketIo.getState().socket?.id ||
+          data.ws_id === useSocketIo.getState().socket?.id ||
           data.type !== "offer"
         ) {
           return
@@ -89,7 +91,8 @@ const bootstrapPeerConnection = async (
         await pc.setLocalDescription(answer)
 
         const answerMessage: RtcWsMessage<RTCSessionDescriptionInit> = {
-          clientId: useSocketIo.getState().socket?.id || "",
+          ws_id: useSocketIo.getState().socket?.id || "",
+          client: client,
           type: "answer",
           payload: answer,
         }
@@ -106,7 +109,7 @@ const bootstrapPeerConnection = async (
       "received_answer",
       async (data: RtcWsMessage<RTCSessionDescriptionInit>) => {
         if (
-          data.clientId === useSocketIo.getState().socket?.id ||
+          data.ws_id === useSocketIo.getState().socket?.id ||
           data.type !== "answer"
         ) {
           return
@@ -129,7 +132,7 @@ const bootstrapPeerConnection = async (
       "received_candidate",
       async (data: RtcWsMessage<RTCIceCandidateInit>) => {
         if (
-          data.clientId === useSocketIo.getState().socket?.id ||
+          data.ws_id === useSocketIo.getState().socket?.id ||
           data.type !== "candidate"
         ) {
           return
@@ -178,6 +181,7 @@ const usePeer = (props: UsePeerProps) => {
     }
 
     bootstrapPeerConnection(
+      props.client,
       props.roomId,
       peerRef,
       props.localStreams,
@@ -190,7 +194,7 @@ const usePeer = (props: UsePeerProps) => {
       peerRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.localStreams.length, socket.socket, props.roomId])
+  }, [props.localStreams.length, socket.socket, props.roomId, props.client])
 }
 
 export default usePeer

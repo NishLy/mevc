@@ -14,11 +14,8 @@ const calculateGridColumns = (count: number) => {
   return "grid-cols-4"
 }
 
-export default function VideosGrid({
-  streams,
-}: {
-  streams: StreamVideoState[]
-}) {
+export default function VideosGrid({}: {}) {
+  const streams = useCurrentRoom((state) => state.videosStreams)
   const pinnedStreamIds = useCurrentRoom((state) => state.pinnedStreamIds)
   const unpinnedStreams = streams.filter((s) => !pinnedStreamIds.includes(s.id))
   const pinnedStreams = streams.filter((s) => pinnedStreamIds.includes(s.id))
