@@ -58,13 +58,36 @@ export class WebRTCService {
         if (!this.peerConnection) {
           throw new Error("Peer connection not initialized")
         }
+
         await this.peerConnection.setRemoteDescription(answer)
       }
     )
+
+    this.wsService?.on(
+      "ice_candidate",
+      async (candidate: RTCIceCandidateInit) => {
+        if (!this.peerConnection) {
+          throw new Error("Peer connection not initialized")
+        }
+        await this.peerConnection.addIceCandidate(candidate)
+      }
+    )
+
+    this.peerConnection?.addEventListener("connectionstatechange", (event) => {
+      if (this.peerConnection?.connectionState === "connected") {
+        console.log("Peer connection established successfully")
+      }
+    })
   }
 
   async createPeerConnection() {
-    this.peerConnection = new RTCPeerConnection()
+    this.peerConnection = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: "stun:stun.l.google.com:19302",
+        },
+      ],
+    })
 
     // Add local streams to the peer connection
     this.localStreams.forEach((stream) => {
@@ -77,6 +100,13 @@ export class WebRTCService {
     this.peerConnection.ontrack = (event) => {
       if (event.streams && event.streams[0]) {
         this.options?.onRemoteStream?.(event.streams[0])
+      }
+    }
+
+    // handle ice candidate
+    this.peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.emit("ice_candidate", event.candidate)
       }
     }
   }

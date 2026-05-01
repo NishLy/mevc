@@ -15,6 +15,7 @@ import (
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/ws"
 	"github.com/NishLy/go-fiber-boilerplate/internal/room"
 	"github.com/NishLy/go-fiber-boilerplate/internal/routes"
+	rtc "github.com/NishLy/go-fiber-boilerplate/internal/webrtc"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/compress"
@@ -55,6 +56,8 @@ func main() {
 
 	room.Bootstrap(appContainer.WsHub)
 	routes.Setup(appContainer, fiberApp)
+
+	go rtc.WebRTCBootstrap(appContainer.WsHub)
 
 	logger.Sugar.Info("Starting server on " + configApp.HOST + ":" + configApp.PORT)
 

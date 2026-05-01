@@ -4,13 +4,26 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
+	"sync"
 
-	socketio "github.com/googollee/go-socket.io"
+	"github.com/NishLy/go-fiber-boilerplate/internal/platform/ws"
+	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/intervalpli"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
+)
+
+type Session struct {
+	pc                *webrtc.PeerConnection
+	pendingCandidates []webrtc.ICECandidateInit
+	remoteSet         bool
+	mu                sync.Mutex
+}
+
+var (
+	sessions = make(map[string]*Session)
+	mu       sync.RWMutex
 )
 
 type udpConn struct {
@@ -24,16 +37,9 @@ var udpConns = map[string]*udpConn{
 	"video": {port: 4002, payloadType: 96},
 }
 
-func WebRTCBootstrap(io *socketio.Server) {
-	pc := MustCreatePeerConnection()
-	defer pc.Close()
-
-	MustAddTransceivers(pc)
+func WebRTCBootstrap(hub ws.WsHub) {
 	mustDialUDP()
-	registerHandlers(pc, io)
-
-	<-webrtc.GatheringCompletePromise(pc)
-	select {}
+	RegisterHandlers(hub)
 }
 
 func MustCreatePeerConnection() *webrtc.PeerConnection {
@@ -89,38 +95,30 @@ func mustDialUDP() {
 	}
 }
 
-func registerHandlers(pc *webrtc.PeerConnection, io *socketio.Server) {
+func RegisterPeerCallbacks(pc *webrtc.PeerConnection, conn ws.WebSocketConnection) {
 	pc.OnTrack(forwardTrack)
 
 	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		fmt.Printf("ICE state: %s\n", state)
+		logger.Sugar.Infof("ICE Connection state: %s", state)
 	})
 
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		fmt.Printf("Connection state: %s\n", state)
+		logger.Sugar.Infof("Peer Connection state: %s", state)
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
-			fmt.Println("Done forwarding")
-			os.Exit(0)
+			mu.Lock()
+			delete(sessions, conn.ID())
+			mu.Unlock()
+			conn.Emit("peer_connection_closed", "Peer connection closed due to failure or closure")
 		}
 	})
 
-	io.OnEvent("/", "send_offer", func(c socketio.Conn, id string, offer interface{}) {
-		fmt.Printf("Received offer from client %s\n", c.ID())
+	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c == nil {
+			return
+		}
 
-		pc := MustCreatePeerConnection()
-		MustAddTransceivers(pc)
-
-		Must(pc.SetRemoteDescription(offer.(webrtc.SessionDescription)))
-
-		answer, err := pc.CreateAnswer(nil)
-		Must(err)
-		Must(pc.SetLocalDescription(answer))
-
-		go func() {
-			<-webrtc.GatheringCompletePromise(pc)
-			fmt.Printf("Sending answer to client %s\n", c.ID())
-			c.Emit("receive_answer", pc.LocalDescription()) // send back to same client
-		}()
+		logger.Sugar.Infof("New ICE candidate for client %s: %s", conn.ID(), c.String())
+		conn.Emit("ice_candidate", c)
 	})
 }
 
@@ -132,22 +130,34 @@ func forwardTrack(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 
 	buf := make([]byte, 1500)
 	pkt := &rtp.Packet{}
+
 	for {
 		n, _, err := track.Read(buf)
 		if err != nil {
-			panic(err)
+			logger.Sugar.Infof("Track ended: %v", err)
+			return
 		}
-		Must(pkt.Unmarshal(buf[:n]))
-		pkt.PayloadType = conn.payloadType
+
+		if err := pkt.Unmarshal(buf[:n]); err != nil {
+			logger.Sugar.Errorf("Unmarshal error: %v", err)
+			continue
+		}
+
+		// pkt.PayloadType = conn.payloadType
+
 		n, err = pkt.MarshalTo(buf)
-		Must(err)
+		if err != nil {
+			logger.Sugar.Errorf("Marshal error: %v", err)
+			continue
+		}
 
 		if _, err = conn.conn.Write(buf[:n]); err != nil {
 			var opErr *net.OpError
 			if errors.As(err, &opErr) && opErr.Err.Error() == "write: connection refused" {
 				continue
 			}
-			panic(err)
+			logger.Sugar.Errorf("UDP write error: %v", err)
+			return
 		}
 	}
 }
@@ -155,5 +165,93 @@ func forwardTrack(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 func Must(err error) {
 	if err != nil {
 		panic(err)
+	}
+}
+
+func ptr[T any](v T) *T {
+	return &v
+}
+
+func ptrUint16(v uint16) *uint16 {
+	return &v
+}
+
+func RegisterHandlers(hub ws.WsHub) {
+	hub.On("send_offer", handleOffer)
+	hub.On("ice_candidate", handleIceCandidate)
+}
+
+func handleOffer(conn ws.WebSocketConnection, data ...any) {
+	logger.Sugar.Infof("Received offer from client %s", conn.ID())
+
+	// 1. Setup PeerConnection
+	pc := MustCreatePeerConnection()
+	MustAddTransceivers(pc)
+	RegisterPeerCallbacks(pc, conn)
+
+	session := &Session{pc: pc}
+
+	// Track session
+	mu.Lock()
+	sessions[conn.ID()] = session
+	mu.Unlock()
+
+	// 2. Parse SDP
+	offerMap, ok := data[0].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	offer := webrtc.SessionDescription{
+		Type: webrtc.SDPTypeOffer,
+		SDP:  offerMap["sdp"].(string),
+	}
+
+	// 3. Set Remote and process buffer
+	session.mu.Lock()
+	Must(pc.SetRemoteDescription(offer))
+	session.remoteSet = true
+
+	// Apply buffered candidates
+	for _, cand := range session.pendingCandidates {
+		pc.AddICECandidate(cand)
+	}
+
+	session.pendingCandidates = nil
+	session.mu.Unlock()
+
+	// 4. Create Answer
+	answer, err := pc.CreateAnswer(nil)
+	Must(err)
+	Must(pc.SetLocalDescription(answer))
+
+	logger.Sugar.Infof("Sending answer to client %s", conn.ID())
+	conn.Emit("receive_answer", answer)
+}
+
+func handleIceCandidate(conn ws.WebSocketConnection, data ...any) {
+	logger.Sugar.Infof("Received ICE candidate from client %s", conn.ID())
+
+	mu.RLock()
+	session, exists := sessions[conn.ID()]
+	mu.RUnlock()
+	if !exists {
+		return
+	}
+
+	candidateMap := data[0].(map[string]interface{})
+
+	candidate := webrtc.ICECandidateInit{
+		Candidate:     candidateMap["candidate"].(string),
+		SDPMid:        ptr(candidateMap["sdpMid"].(string)),
+		SDPMLineIndex: ptrUint16(uint16(candidateMap["sdpMLineIndex"].(float64))),
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	if !session.remoteSet {
+		session.pendingCandidates = append(session.pendingCandidates, candidate)
+	} else {
+		Must(session.pc.AddICECandidate(candidate))
 	}
 }
