@@ -20,5 +20,8 @@ func LimiterConfig() fiber.Handler {
 				})
 		},
 		SkipSuccessfulRequests: true,
+		Next: func(c fiber.Ctx) bool {
+			return c.Path() == "/ws"
+		},
 	})
 }

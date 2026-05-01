@@ -11,9 +11,14 @@ import (
 
 func Logger() fiber.Handler {
 	return func(c fiber.Ctx) error {
-		start := time.Now()
+		path := c.Path()
+		if path == "/ws" || path == "/ws/" || path == "/" {
+			return c.Next()
+		}
 
-		// 1. Execute the next handler
+		method := c.Method()
+		logger.Sugar.Infof("Incoming request: %s %s", method, path)
+		start := time.Now()
 		err := c.Next()
 
 		status := c.Response().StatusCode()
@@ -29,9 +34,9 @@ func Logger() fiber.Handler {
 
 		logger.Sugar.Info("http_request",
 			zap.String("request_id", reqID),
-			zap.String("method", c.Method()),
-			zap.String("path", c.Path()),
-			zap.Int("status", status), // Use the logic-derived status
+			zap.String("method", method),
+			zap.String("path", path),
+			zap.Int("status", status),
 			zap.Duration("latency", time.Since(start)),
 		)
 

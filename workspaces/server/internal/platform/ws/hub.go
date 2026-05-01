@@ -53,12 +53,19 @@ func (w *wsHub) Join(roomId string, conn WebSocketConnection) {
 }
 
 func (w *wsHub) Emit(event string, data ...interface{}) {
+	if !w.isAllowedToEmit(event) {
+		return
+	}
+
 	for _, conn := range w.clients {
 		conn.Emit(event, data...)
 	}
 }
 
 func (w *wsHub) EmitTo(roomId string, event string, data ...interface{}) {
+	if !w.isAllowedToEmit(event) {
+		return
+	}
 	if conns, ok := w.rooms[roomId]; ok {
 		for _, conn := range conns {
 			conn.Emit(event, data...)
@@ -117,6 +124,16 @@ func (w *wsHub) Unregister(conn WebSocketConnection) {
 
 func (w *wsHub) isAllowToBroadcast(eventName string) bool {
 	var reversedNames = []string{"connect", "disconnect", "error"}
+	for _, name := range reversedNames {
+		if name == eventName {
+			return false
+		}
+	}
+	return true
+}
+
+func (w *wsHub) isAllowedToEmit(eventName string) bool {
+	var reversedNames = []string{"connected", "disconnected", "error"}
 	for _, name := range reversedNames {
 		if name == eventName {
 			return false

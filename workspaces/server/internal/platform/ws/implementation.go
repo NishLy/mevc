@@ -1,8 +1,7 @@
 package ws
 
 import (
-	"log"
-
+	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 )
@@ -10,21 +9,25 @@ import (
 func NewWsFiber(app *fiber.App) WsHub {
 	hub := NewWsHub()
 
-	app.Use("/ws", func(c fiber.Ctx) error {
-		if websocket.IsWebSocketUpgrade(c) {
-			c.Locals("allowed", true)
-			return c.Next()
-		}
-		return fiber.ErrUpgradeRequired
-	})
+	// app.Use("/ws", func(c fiber.Ctx) error {
+	// 	if websocket.IsWebSocketUpgrade(c) {
+	// 		c.Locals("allowed", true)
+	// 		return c.Next()
+	// 	}
+	// 	return fiber.ErrUpgradeRequired
+	// })
 
 	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
 		conn := hub.Register(c)
+
+		logger.Sugar.Infof("New WebSocket connection established: %s", conn.ID())
 
 		hub.handleMessage("connect", WsMessage{
 			Event: "connect",
 			Data:  []interface{}{},
 		}, conn)
+
+		conn.Emit("connected", "Welcome to the WebSocket server!")
 
 		defer func() {
 			// 3. ON DISCONNECT
@@ -32,6 +35,9 @@ func NewWsFiber(app *fiber.App) WsHub {
 			c.Close()
 
 			hub.handleMessage("disconnect", WsMessage{
+				Metadata: WsMetadata{
+					ID: conn.ID(),
+				},
 				Event: "disconnect",
 				Data:  []interface{}{},
 			}, conn)
@@ -44,7 +50,7 @@ func NewWsFiber(app *fiber.App) WsHub {
 		)
 		for {
 			if mt, msg, err = hub.readMessage(c); err != nil {
-				log.Println("read:", err)
+				logger.Sugar.Errorf("read error: %v", err)
 				break
 			}
 
@@ -52,17 +58,13 @@ func NewWsFiber(app *fiber.App) WsHub {
 				parsedMsg, err := hub.parseJson(msg)
 
 				if err != nil {
-					log.Println("error parsing message:", err)
+					logger.Sugar.Errorf("error parsing message: %v", err)
 					continue
 				}
 
 				hub.handleMessage(parsedMsg.Event, parsedMsg, conn)
 			}
 
-			if err = c.WriteMessage(mt, msg); err != nil {
-				log.Println("write:", err)
-				break
-			}
 		}
 	}))
 	return hub

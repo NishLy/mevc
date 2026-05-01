@@ -18,6 +18,10 @@ func InjectTenantIdentifier() fiber.Handler {
 			return c.Next()
 		}
 
+		if path == "/ws" {
+			return c.Next()
+		}
+
 		if tenantID == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error": "X-Tenant-ID header is required",

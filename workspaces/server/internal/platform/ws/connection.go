@@ -1,10 +1,18 @@
 package ws
 
-import "crypto"
+import (
+	"fmt"
+)
+
+type WsMetadata struct {
+	ID     string  `json:"id"`
+	RoomId *string `json:"roomId,omitempty"`
+}
 
 type WsMessage struct {
-	Event string        `json:"event"`
-	Data  []interface{} `json:"data"`
+	Metadata WsMetadata    `json:"metadata"`
+	Event    string        `json:"event"`
+	Data     []interface{} `json:"data"`
 }
 
 type RawConn interface {
@@ -32,6 +40,9 @@ func NewWebsocketConn(conn RawConn, id string) WebSocketConnection {
 
 func (w *webSocketConnection) Emit(event string, data ...interface{}) error {
 	return w.conn.WriteJSON(map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"id": w.id,
+		},
 		"event": event,
 		"data":  data,
 	})
@@ -50,7 +61,5 @@ func (w *webSocketConnection) WriteJSON(v interface{}) error {
 }
 
 func generateWsId(seed int) string {
-	hash := crypto.SHA256.New()
-	hash.Write([]byte(string(seed)))
-	return string(hash.Sum(nil))
+	return fmt.Sprintf("ws_%d", seed)
 }
