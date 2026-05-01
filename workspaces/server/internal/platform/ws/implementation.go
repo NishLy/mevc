@@ -25,7 +25,7 @@ func NewWsFiber(app *fiber.App) WsHub {
 			Data:  []interface{}{},
 		}, conn, true)
 
-		conn.Emit("connected", "Welcome to the WebSocket server!")
+		conn.Emit("connect", "Welcome to the WebSocket server!")
 
 		defer func() {
 			// 3. ON DISCONNECT

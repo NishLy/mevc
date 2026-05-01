@@ -8,6 +8,10 @@ import (
 func Bootstrap(hub ws.WsHub) {
 
 	hub.On("connect", func(conn ws.WebSocketConnection, data ...any) {
-		logger.Sugar.Infof("New connection ss: %s", conn.ID())
+		logger.Sugar.Infof("New connection: %s", conn.ID())
+	})
+
+	hub.On("disconnect", func(conn ws.WebSocketConnection, data ...any) {
+		logger.Sugar.Infof("Disconnected: %s", conn.ID())
 	})
 }

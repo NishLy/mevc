@@ -1,11 +1,3 @@
-class WsConnection {
-  id: string = ""
-
-  constructor(id: string) {
-    this.id = id
-  }
-}
-
 interface WsMessage {
   metadata: {
     id: string
@@ -37,7 +29,8 @@ class WSservice {
     ((eventName: string, ...data: any[]) => void)[]
   > = new Map()
 
-  connection: WsConnection | null = null
+  id: string | null = null
+  connected: boolean = false
 
   constructor({ url, options }: WSserviceProps) {
     this.url = url
@@ -67,8 +60,9 @@ class WSservice {
       const data = JSON.parse(event.data) as WsMessage
       const handlers = this.listeners.get(data.event)
 
-      if (data.data) {
-        this.connection = new WsConnection(data.metadata.id)
+      if (data.data && data.event === "connect" && data.metadata.id) {
+        this.id = data.metadata.id
+        this.connected = true
       }
 
       if (handlers)
@@ -81,6 +75,9 @@ class WSservice {
       if (this.reconnectOnClose && this.reconnectAttempts > 0) {
         this.reconnectAttempts--
         setTimeout(() => this.connect(), this.reconnectInterval)
+      } else {
+        this.ws = null
+        this.connected = false
       }
     }
   }
