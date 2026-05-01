@@ -25,8 +25,9 @@ export default function Room({ roomId }: RoomProps) {
 
   useEffect(() => {
     let mounted = true
-    wsocketService.current.on("connected", (eventName, msg) => {
-      console.log("WebSocket connected with data:", msg)
+
+    wsocketService.current.on("connect", (eventName, msg) => {
+      wsocketService.current.emit("join_room", roomId)
     })
 
     return () => {

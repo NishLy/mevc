@@ -14,4 +14,14 @@ func Bootstrap(hub ws.WsHub) {
 	hub.On("disconnect", func(conn ws.WebSocketConnection, data ...any) {
 		logger.Sugar.Infof("Disconnected: %s", conn.ID())
 	})
+
+	hub.On("join_room", func(conn ws.WebSocketConnection, data ...any) {
+		roomId, ok := data[0].(string)
+		if !ok || roomId == "" {
+			return
+		}
+
+		hub.Join(roomId, conn)
+		logger.Sugar.Infof("Connection %s joined room %s", conn.ID(), roomId)
+	})
 }

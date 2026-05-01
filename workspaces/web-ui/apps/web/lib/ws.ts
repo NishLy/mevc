@@ -24,10 +24,7 @@ class WSservice {
 
   private url: string
   private ws: WebSocket | null = null
-  private listeners: Map<
-    string,
-    ((eventName: string, ...data: any[]) => void)[]
-  > = new Map()
+  private listeners: Map<string, ((...data: any[]) => void)[]> = new Map()
 
   id: string | null = null
   connected: boolean = false
@@ -67,7 +64,7 @@ class WSservice {
 
       if (handlers)
         for (const handler of handlers) {
-          handler(data.event, ...data.data)
+          handler(...data.data)
         }
     }
 

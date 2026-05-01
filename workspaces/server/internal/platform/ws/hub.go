@@ -7,8 +7,10 @@ import (
 	"github.com/gofiber/contrib/v3/websocket"
 )
 
+type HandlerFunc func(conn WebSocketConnection, data ...any)
+
 type WsHub interface {
-	On(event string, callback func(conn WebSocketConnection, data ...any))
+	On(event string, callback HandlerFunc)
 	Join(roomId string, conn WebSocketConnection)
 	Emit(event string, data ...any)
 	EmitTo(roomId string, event string, data ...any)
@@ -25,7 +27,7 @@ type wsHub struct {
 	currentId int
 	clients   map[string]WebSocketConnection
 	rooms     map[string][]WebSocketConnection
-	listeners map[string][]func(conn WebSocketConnection, data ...any)
+	listeners map[string][]HandlerFunc
 	mu        sync.RWMutex
 }
 
@@ -33,14 +35,14 @@ func NewWsHub() WsHub {
 	return &wsHub{
 		clients:   make(map[string]WebSocketConnection),
 		rooms:     make(map[string][]WebSocketConnection),
-		listeners: make(map[string][]func(conn WebSocketConnection, data ...any)),
+		listeners: make(map[string][]HandlerFunc),
 		mu:        sync.RWMutex{},
 	}
 }
 
-func (w *wsHub) On(event string, callback func(conn WebSocketConnection, data ...any)) {
+func (w *wsHub) On(event string, callback HandlerFunc) {
 	if _, ok := w.listeners[event]; !ok {
-		w.listeners[event] = []func(conn WebSocketConnection, data ...any){}
+		w.listeners[event] = []HandlerFunc{}
 	}
 	w.listeners[event] = append(w.listeners[event], callback)
 }
