@@ -1,48 +1,126 @@
 package ws
 
-import "github.com/gofiber/websocket/v2"
+import (
+	"encoding/json"
+	"sync"
 
-type Hub struct {
-	clients map[*websocket.Conn]bool
-	Room    map[string]map[*websocket.Conn]bool
+	"github.com/gofiber/contrib/v3/websocket"
+)
+
+type WsHub interface {
+	On(event string, callback func(conn WebSocketConnection, data ...interface{}))
+	Join(roomId string, conn WebSocketConnection)
+	Emit(event string, data ...interface{})
+	EmitTo(roomId string, event string, data ...interface{})
+	readMessage(connection *websocket.Conn) (int, []byte, error)
+	Register(conn *websocket.Conn) WebSocketConnection
+	Unregister(conn WebSocketConnection)
+	GetRoom(conn WebSocketConnection) *string
+	parseJson(data []byte) (WsMessage, error)
+	handleMessage(eventName string, message WsMessage, conn WebSocketConnection)
+	isAllowToBroadcast(eventName string) bool
 }
 
-func NewHub() *Hub {
-	return &Hub{
-		clients: make(map[*websocket.Conn]bool),
-		Room:    make(map[string]map[*websocket.Conn]bool),
+type wsHub struct {
+	currentId int
+	clients   map[string]WebSocketConnection
+	rooms     map[string][]WebSocketConnection
+	listeners map[string][]func(conn WebSocketConnection, data ...interface{})
+	mu        sync.RWMutex
+}
+
+func NewWsHub() WsHub {
+	return &wsHub{
+		clients:   make(map[string]WebSocketConnection),
+		rooms:     make(map[string][]WebSocketConnection),
+		listeners: make(map[string][]func(conn WebSocketConnection, data ...interface{})),
+		mu:        sync.RWMutex{},
 	}
 }
 
-func (h *Hub) Add(c *websocket.Conn, room *string) {
+func (w *wsHub) On(event string, callback func(conn WebSocketConnection, data ...interface{})) {
+	if _, ok := w.listeners[event]; !ok {
+		w.listeners[event] = []func(conn WebSocketConnection, data ...interface{}){}
+	}
+	w.listeners[event] = append(w.listeners[event], callback)
+}
 
-	if room != nil {
-		if _, ok := h.Room[*room]; !ok {
-			h.Room[*room] = make(map[*websocket.Conn]bool)
+func (w *wsHub) Join(roomId string, conn WebSocketConnection) {
+	if _, ok := w.rooms[roomId]; !ok {
+		w.rooms[roomId] = []WebSocketConnection{}
+	}
+	w.rooms[roomId] = append(w.rooms[roomId], conn)
+}
+
+func (w *wsHub) Emit(event string, data ...interface{}) {
+	for _, conn := range w.clients {
+		conn.Emit(event, data...)
+	}
+}
+
+func (w *wsHub) EmitTo(roomId string, event string, data ...interface{}) {
+	if conns, ok := w.rooms[roomId]; ok {
+		for _, conn := range conns {
+			conn.Emit(event, data...)
 		}
 	}
-	h.Room[*room][c] = true
 }
 
-func (h *Hub) Remove(c *websocket.Conn) {
-	delete(h.clients, c)
-	for room := range h.Room {
-		delete(h.Room[room], c)
-		if len(h.Room[room]) == 0 {
-			delete(h.Room, room)
+func (w *wsHub) readMessage(connection *websocket.Conn) (int, []byte, error) {
+	return connection.ReadMessage()
+}
+
+func (w *wsHub) parseJson(data []byte) (WsMessage, error) {
+	var parsedData WsMessage
+	err := json.Unmarshal(data, &parsedData)
+	return parsedData, err
+}
+
+func (w *wsHub) handleMessage(eventName string, message WsMessage, conn WebSocketConnection) {
+	if !w.isAllowToBroadcast(eventName) {
+		return
+	}
+
+	if listeners, ok := w.listeners[eventName]; ok {
+		for _, listener := range listeners {
+			listener(conn, message.Data...)
 		}
 	}
 }
 
-func (h *Hub) Broadcast(msg []byte, room *string) {
-
-	for client := range h.clients {
-		if room != nil {
-			if _, ok := h.Room[*room][client]; ok {
-				client.WriteMessage(websocket.TextMessage, msg)
+func (w *wsHub) GetRoom(conn WebSocketConnection) *string {
+	for roomId, conns := range w.rooms {
+		for _, c := range conns {
+			if c == conn {
+				return &roomId
 			}
-		} else {
-			client.WriteMessage(websocket.TextMessage, msg)
 		}
 	}
+	return nil
+}
+
+func (w *wsHub) Register(conn *websocket.Conn) WebSocketConnection {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	id := generateWsId(w.currentId)
+	newConn := NewWebsocketConn(conn, id)
+	w.clients[id] = newConn
+	w.currentId++
+	return newConn
+}
+
+func (w *wsHub) Unregister(conn WebSocketConnection) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.clients, conn.ID())
+}
+
+func (w *wsHub) isAllowToBroadcast(eventName string) bool {
+	var reversedNames = []string{"connect", "disconnect", "error"}
+	for _, name := range reversedNames {
+		if name == eventName {
+			return false
+		}
+	}
+	return true
 }

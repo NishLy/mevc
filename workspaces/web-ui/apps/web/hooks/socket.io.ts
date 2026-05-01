@@ -1,69 +1,48 @@
-import io, { Socket } from "socket.io-client"
+class WsConnection {
+  id: string = ""
 
-export class SocketIoService {
-  socket: typeof Socket | null = null
-  currentRoomId: string | null = null
-  isConnected: boolean = false
+  constructor(id: string) {
+    this.id = id
+  }
+}
 
-  onReconnect?: (id: string) => void
+class WS {
+  private url: string
+  private ws: WebSocket | null = null
+  private listeners: Map<string, (eventName: string, data: any) => void> =
+    new Map()
 
-  constructor(onReconnect?: (id: string) => void) {
-    this.onReconnect = onReconnect
+  id = ""
+
+  constructor(url: string) {
+    this.url = url
+    this.ws = null
+    this.listeners = new Map()
   }
 
-  async initSocket(): Promise<void> {
-    // Guard: don't reinitialize if already connected
-    if (this.socket?.connected) return
+  connect() {
+    this.ws = new WebSocket(this.url)
 
-    return new Promise<void>((resolve, reject) => {
-      this.socket = io("http://localhost:8001", {
-        transports: ["websocket"],
-        reconnectionAttempts: 5, // limit retries
-        reconnectionDelay: 2000, // wait 2s between retries
-        timeout: 10000,
-      })
+    this.ws.onopen = () => {}
 
-      this.socket.once("connect", () => {
-        // use once, not on
-        this.isConnected = true
-        resolve()
-      })
+    this.ws.onmessage = (event) => {
+      const data = JSON.parse(event.data)
 
-      this.socket.on("reconnect", () => {
-        this.isConnected = true
-        this.onReconnect?.(this.socket!.id)
-      })
-
-      this.socket.on("disconnect", (reason: string) => {
-        this.isConnected = false
-        console.log("Socket disconnected:", reason)
-      })
-
-      this.socket.on("connect_error", (err: Error) => {
-        console.error("Connection error:", err.message)
-        reject(err)
-      })
-    })
-  }
-
-  connectToRoom(roomId: string) {
-    if (!this.socket?.connected) {
-      console.error("Socket not connected")
-      return
+      const handler = this.listeners.get(data.type)
+      if (handler) handler(data.type, data)
     }
-    this.socket.emit("join_room", roomId)
-    this.currentRoomId = roomId
+
+    this.ws.onclose = () => {
+      console.log("WS closed, reconnecting...")
+      setTimeout(() => this.connect(), 2000)
+    }
   }
 
-  leaveRoom() {
-    if (!this.socket || !this.currentRoomId) return
-    this.socket.emit("leave_room", this.currentRoomId)
-    this.currentRoomId = null
+  emit(eventName: string, ...data: any) {
+    this.ws?.send(JSON.stringify({ type: eventName, data }))
   }
 
-  disconnect() {
-    this.socket?.disconnect()
-    this.socket = null
-    this.isConnected = false
+  on(type: string, callback: (eventName: string, data: any) => void) {
+    this.listeners.set(type, callback)
   }
 }

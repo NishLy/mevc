@@ -2,10 +2,10 @@ package app
 
 import (
 	"github.com/NishLy/go-fiber-boilerplate/config"
-	socketio "github.com/googollee/go-socket.io"
+	"github.com/NishLy/go-fiber-boilerplate/internal/platform/ws"
 )
 
 type App struct {
 	Config *config.Config
-	Io     *socketio.Server
+	WsHub  ws.WsHub
 }
