@@ -2,6 +2,7 @@ package ws
 
 import (
 	"fmt"
+	"sync"
 )
 
 type WsMetadata struct {
@@ -31,6 +32,7 @@ type webSocketConnection struct {
 	conn    RawConn // Use the interface type here
 	id      string
 	GroupId string
+	mu      sync.Mutex
 }
 
 func NewWebsocketConn(conn RawConn, id string) WebSocketConnection {
@@ -38,6 +40,7 @@ func NewWebsocketConn(conn RawConn, id string) WebSocketConnection {
 		conn:    conn,
 		id:      id,
 		GroupId: "",
+		mu:      sync.Mutex{},
 	}
 }
 
@@ -67,6 +70,8 @@ func (w *webSocketConnection) Close() error {
 }
 
 func (w *webSocketConnection) WriteJSON(v interface{}) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.conn.WriteJSON(v)
 }
 

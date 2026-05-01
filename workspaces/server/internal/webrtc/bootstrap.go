@@ -76,7 +76,7 @@ type UserTracksMetadata struct {
 	tracks []UserTrackMetadata
 }
 
-var GlobalUserTracksMetadata = make(map[string]*UserTracksMetadata)
+var GlobalUserTracksMetadata = make(map[string]map[string]*UserTracksMetadata)
 
 var MAXIMUM_TRANCEIVERS = 10
 
@@ -146,14 +146,17 @@ func RegisterPeerCallbacks(hub ws.WsHub, pc *webrtc.PeerConnection, conn ws.WebS
 		sessionManager, exists := GlobalSessionManager[*groupID]
 		session, exists := sessionManager.GetSession(conn.ID())
 
-		hub.EmitTo(*groupID, "new_track", map[string]interface{}{
+		hub.EmitTo(*groupID, "new_track", &conn, map[string]interface{}{
 			"clientId": session.clientId,
 			"trackId":  track.ID(),
 			"kind":     track.Kind().String(),
 		})
 
+		logger.Sugar.Infof("Current sessions in group %s: %d", *groupID, len(sessionManager.sessions))
+
 		if exists {
 			for _, s := range sessionManager.sessions {
+				logger.Sugar.Infof("Subscribed tracks for session %s: %v", s.clientId, s.subscribedTracks)
 				if s.pc != pc && !isAlreadyAssigned(s.subscribedTracks, track.ID()) {
 					forwardTrack(track, receiver, s)
 					s.subscribedTracks[track.ID()] = track
@@ -321,6 +324,7 @@ func RegisterHandlers(hub ws.WsHub) {
 	hub.On("track_changed", func(conn ws.WebSocketConnection, data ...any) {
 		handleTrackChanged(hub, conn, data...)
 	})
+	hub.On("joined_room", handleLateJoin)
 }
 
 func handleOffer(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
@@ -435,23 +439,52 @@ func handleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) 
 
 	logger.Sugar.Infof("Received track change from client %s: trackId=%s, kind=%s, streamGroupId=%s", clientId, trackId, kind, streamGroupId)
 
-	if _, exists := GlobalUserTracksMetadata[clientId]; !exists {
-		GlobalUserTracksMetadata[clientId] = &UserTracksMetadata{
-			tracks: []UserTrackMetadata{},
-		}
+	if _, exists := GlobalUserTracksMetadata[*connGroupPtr]; !exists {
+		GlobalUserTracksMetadata[*connGroupPtr] = make(map[string]*UserTracksMetadata)
 	}
 
-	GlobalUserTracksMetadata[clientId].tracks = append(GlobalUserTracksMetadata[clientId].tracks, UserTrackMetadata{
+	if _, exists := GlobalUserTracksMetadata[*connGroupPtr][clientId]; !exists {
+		GlobalUserTracksMetadata[*connGroupPtr][clientId] = &UserTracksMetadata{tracks: []UserTrackMetadata{}}
+	}
+
+	GlobalUserTracksMetadata[*connGroupPtr][clientId].tracks = append(GlobalUserTracksMetadata[*connGroupPtr][clientId].tracks, UserTrackMetadata{
 		trackId:       trackId,
 		kind:          kind,
 		streamGroupId: streamGroupId,
 		clientId:      clientId,
 	})
 
-	hub.EmitTo(*connGroupPtr, "track_changed", map[string]interface{}{
+	hub.EmitTo(*connGroupPtr, "new_track", &conn, map[string]interface{}{
 		"clientId":      clientId,
 		"trackId":       trackId,
 		"kind":          kind,
 		"streamGroupId": streamGroupId,
 	})
+}
+
+func handleLateJoin(conn ws.WebSocketConnection, data ...any) {
+	connGroupPtr := conn.GetGroupId()
+	if connGroupPtr == nil {
+		logger.Sugar.Warnf("Connection %s does not have a group ID, cannot emit track change", conn.ID())
+		return
+	}
+
+	clientId := data[0].(string)
+
+	if groupTracks, exists := GlobalUserTracksMetadata[*connGroupPtr]; exists {
+		for otherClientId, metadata := range groupTracks {
+			if otherClientId == clientId {
+				continue
+			}
+
+			for _, trackMeta := range metadata.tracks {
+				conn.Emit("new_track", map[string]interface{}{
+					"clientId":      otherClientId,
+					"trackId":       trackMeta.trackId,
+					"kind":          trackMeta.kind,
+					"streamGroupId": trackMeta.streamGroupId,
+				})
+			}
+		}
+	}
 }

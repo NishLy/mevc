@@ -34,17 +34,6 @@ export default function Room({ roomId }: RoomProps) {
             useMeet.setState({ roomId })
             setWsConnected(true)
           },
-          new_track: (data: {
-            clientId: string
-            trackId: string
-            kind: string
-          }) => {
-            console.log("New track received:", {
-              clientId: data.clientId,
-              trackId: data.trackId,
-              kind: data.kind,
-            })
-          },
         },
       },
     })
@@ -52,11 +41,6 @@ export default function Room({ roomId }: RoomProps) {
     const localMediaController = new MediaStreamController(dummyClientId)
     localControllerRef.current = localMediaController
     useMeet.getState().setController(localMediaController)
-
-    if (webRTCServiceRef.current) {
-      // Re-send the offer to the new socket ID
-      webRTCServiceRef.current.sendOffer()
-    }
 
     return () => {
       localMediaController.destroy()
@@ -82,7 +66,7 @@ export default function Room({ roomId }: RoomProps) {
       wsocketService.current!,
       localStreams,
       {
-        onRemoteStream: (streamItem) => {
+        onAddedRemoteStream: (streamItem) => {
           const newRemoteStreams = [
             ...useMeet.getState().remoteStreams,
             streamItem,

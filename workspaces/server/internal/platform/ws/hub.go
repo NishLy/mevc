@@ -14,7 +14,8 @@ type WsHub interface {
 	Join(roomId string, conn WebSocketConnection)
 	Leave(roomId string, conn WebSocketConnection)
 	Emit(event string, data ...any)
-	EmitTo(roomId string, event string, data ...any)
+	EmitTo(roomId string, event string, excp *WebSocketConnection, data ...any)
+	// EmitExcept(conn WebSocketConnection, event string, data ...any)
 	readMessage(connection *websocket.Conn) (int, []byte, error)
 	Register(conn *websocket.Conn) WebSocketConnection
 	Unregister(conn WebSocketConnection)
@@ -76,13 +77,15 @@ func (w *wsHub) Emit(event string, data ...any) {
 	}
 }
 
-func (w *wsHub) EmitTo(roomId string, event string, data ...any) {
+func (w *wsHub) EmitTo(roomId string, event string, excp *WebSocketConnection, data ...any) {
 	if !w.isAllowedToEmit(event) {
 		return
 	}
 	if conns, ok := w.rooms[roomId]; ok {
 		for _, conn := range conns {
-			conn.Emit(event, data...)
+			if excp == nil || conn != *excp {
+				conn.Emit(event, data...)
+			}
 		}
 	}
 }

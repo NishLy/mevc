@@ -2,7 +2,19 @@ import WSservice from "@/lib/ws"
 import { MediaStreamItem } from "../types/service"
 
 interface WebRTCServiceProps {
-  onRemoteStream: (stream: MediaStreamItem) => void
+  onAddedRemoteStream: (stream: MediaStreamItem) => void
+}
+
+interface TrackMeta {
+  trackId: string
+  kind: string
+  clientId: string
+  streamGroupId: string
+}
+
+interface PendingEntry {
+  meta?: TrackMeta
+  track?: MediaStreamTrack
 }
 
 export class WebRTCService {
@@ -10,16 +22,23 @@ export class WebRTCService {
   private wsService: WSservice | null = null
   private localStreams: MediaStreamItem[] = []
   private roomId: string = ""
-  private remoteStreamsMetadata: {
-    trackId: string
-    kind: string
-    clientId: string
-    streamGroupId: string
-  }[] = []
-  private remoteStreams: Map<string, MediaStream> = new Map()
+
+  // Rendezvous map: trackId → { meta?, track? }
+  // Whichever side (socket or WebRTC) arrives second triggers resolution
+  private pending: Map<string, PendingEntry> = new Map()
+  private pendingInterval: NodeJS.Timeout | null = null
+
+  // streamGroupId → { clientId, tracks: Map<kind, track> }
+  private resolvedStreams: Map<
+    string,
+    {
+      clientId: string
+      tracks: Map<string, MediaStreamTrack>
+    }
+  > = new Map()
 
   private options: WebRTCServiceProps = {
-    onRemoteStream: () => {},
+    onAddedRemoteStream: () => {},
   }
 
   constructor(
@@ -29,97 +48,47 @@ export class WebRTCService {
     localStreams: MediaStreamItem[],
     options?: WebRTCServiceProps
   ) {
-    this.bindAllMethods()
-
     this.roomId = roomId
     this.wsService = wsService
     this.localStreams = localStreams
-    if (options) {
-      this.options = options
-    }
+    if (options) this.options = options
 
-    this.init()
-      .then(() => {
-        console.log("WebRTC service initialized successfully")
-      })
-      .catch((error) => {
-        console.error("Failed to initialize WebRTC service:", error)
-      })
-  }
-
-  private bindAllMethods() {
-    this.init = this.init.bind(this)
-    this.createPeerConnection = this.createPeerConnection.bind(this)
-    this.sendOffer = this.sendOffer.bind(this)
-    this.createOffer = this.createOffer.bind(this)
-    this.emit = this.emit.bind(this)
-    this.destroy = this.destroy.bind(this)
+    this.init().catch((err) => {
+      console.error("Failed to initialize WebRTC service:", err)
+    })
   }
 
   private async init() {
     this.createPeerConnection()
-    this.sendOffer()
 
-    // Listen for the answer from the remote peer
+    // ── Socket side of rendezvous ──────────────────────────────────
+    // Fired by server when a publisher's track is being forwarded to us.
+    // May arrive before or after ontrack.
+    this.wsService?.on("new_track", (meta: TrackMeta) => {
+      // Ignore our own tracks being echoed back
+      // if (meta.clientId === this.clientId) return
+
+      const entry = this.pending.get(meta.trackId) ?? {}
+      entry.meta = meta
+      this.pending.set(meta.trackId, entry)
+    })
+
     this.wsService?.on(
       "receive_answer",
-      async (clientId: string, answer: RTCSessionDescriptionInit) => {
-        if (!this.peerConnection) {
-          throw new Error("Peer connection not initialized")
-        }
-
-        await this.peerConnection.setRemoteDescription(answer)
+      async (_clientId: string, answer: RTCSessionDescriptionInit) => {
+        await this.peerConnection?.setRemoteDescription(answer)
       }
     )
 
     this.wsService?.on(
       "ice_candidate",
-      async (clientId: string, candidate: RTCIceCandidateInit) => {
-        if (!this.peerConnection) {
-          throw new Error("Peer connection not initialized")
-        }
-        await this.peerConnection.addIceCandidate(candidate)
+      async (_clientId: string, candidate: RTCIceCandidateInit) => {
+        await this.peerConnection?.addIceCandidate(candidate)
       }
     )
 
-    this.peerConnection?.addEventListener("connectionstatechange", (event) => {
-      if (this.peerConnection?.connectionState === "connected") {
-        console.log("Peer connection established successfully")
-      }
-    })
-
-    this.wsService?.on(
-      "track_changed",
-      (data: {
-        trackId: string
-        kind: string
-        streamGroupId: string
-        clientId: string
-      }) => {
-        if (this.clientId === data.clientId) {
-          return
-        }
-
-        this.remoteStreamsMetadata.push({
-          trackId: data.trackId,
-          kind: data.kind,
-          clientId: data.clientId,
-          streamGroupId: data.streamGroupId,
-        })
-      }
-    )
-  }
-
-  async createPeerConnection() {
-    this.peerConnection = new RTCPeerConnection({
-      iceServers: [
-        {
-          urls: "stun:stun.l.google.com:19302",
-        },
-      ],
-    })
-
-    // Add local streams to the peer connection
+    // Emit track metadata before sending offer so server
+    // has it ready when new_track fires on subscribers
     this.localStreams.forEach((streamItem) => {
       streamItem.stream.getTracks().forEach((track) => {
         this.emit("track_changed", {
@@ -127,100 +96,144 @@ export class WebRTCService {
           kind: track.kind,
           streamGroupId: streamItem.id,
         })
+      })
+    })
 
+    await this.sendOffer()
+  }
+
+  private createPeerConnection() {
+    this.peerConnection = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    })
+
+    // Add local tracks
+    this.localStreams.forEach((streamItem) => {
+      streamItem.stream.getTracks().forEach((track) => {
         this.peerConnection?.addTrack(track, streamItem.stream)
       })
     })
 
-    // Listen for remote streams
-    this.peerConnection.ontrack = (event) => {
+    // ── WebRTC side of rendezvous ──────────────────────────────────
+    // May arrive before or after new_track socket event.
+    this.peerConnection.ontrack = (event: RTCTrackEvent) => {
       const track = event.track
-      const streamId = event.streams[0]?.id || "default"
 
-      let trackMetadata = this.remoteStreamsMetadata.find(
-        (s) => s.trackId === track.id
-      )
+      const entry = this.pending.get(track.id) ?? {}
+      entry.track = track
+      this.pending.set(track.id, entry)
 
-      if (!trackMetadata) {
-        return console.warn("Received track without metadata, ignoring", {
-          trackId: track.id,
-        })
-      }
-
-      if (trackMetadata.clientId === this.clientId) {
-        return
-      }
-
-      let remoteStream = this.remoteStreams.get(trackMetadata.streamGroupId)
-
-      if (!remoteStream) {
-        remoteStream = new MediaStream()
-        this.remoteStreams.set(trackMetadata.streamGroupId, remoteStream)
-      } else {
-        remoteStream = new MediaStream([...remoteStream.getTracks(), track])
-        this.remoteStreams.set(trackMetadata.streamGroupId, remoteStream)
-      }
-
-      const remoteStreamItem: MediaStreamItem = {
-        id: trackMetadata.streamGroupId,
-        stream: remoteStream,
-        type: "camera",
-        isLocal: false,
-      }
-
-      if (this.options.onRemoteStream) {
-        this.options.onRemoteStream(remoteStreamItem)
+      if (this.pendingInterval === null) {
+        this.startIntervalCheck()
       }
     }
 
-    // handle ice candidate
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         this.emit("ice_candidate", event.candidate)
       }
     }
-  }
 
-  async setLocalStreams(newStreams: MediaStreamItem[]) {
-    if (!this.peerConnection) {
-      throw new Error("Peer connection not initialized")
-    }
-
-    for (const newStream of newStreams) {
-      for (const oldStream of this.localStreams) {
-        if (oldStream.id === newStream.id) {
-          continue
-        }
-
-        newStream.stream.getTracks().forEach((track) => {
-          this.emit("track_changed", {
-            trackId: track.id,
-            kind: track.kind,
-            streamGroupId: newStream.id,
-          })
-
-          this.peerConnection?.addTrack(track, newStream.stream)
-        })
+    this.peerConnection.onconnectionstatechange = () => {
+      if (this.peerConnection?.connectionState === "connected") {
+        this.emit("joined_room", this.roomId)
       }
     }
   }
 
-  async sendOffer() {
-    if (!this.peerConnection) {
-      throw new Error("Peer connection not initialized")
-    }
-    const offer = await this.createOffer()
-    this.emit("send_offer", offer)
+  private async startIntervalCheck() {
+    // In case of any missed events, this periodic check can help resolve pending tracks
+    this.pendingInterval = setInterval(() => {
+      for (const trackId of this.pending.keys()) {
+        this.tryResolve(trackId)
+      }
+    }, 5000)
   }
 
-  async createOffer() {
-    if (!this.peerConnection) {
-      throw new Error("Peer connection not initialized")
+  // Called from both sides — only acts when both meta + track are present
+  private tryResolve(trackId: string) {
+    const entry = this.pending.get(trackId)
+
+    const pendingArr = Array.from(this.pending.entries())
+    console.log(
+      "Pending that have meta but no track:",
+      pendingArr.filter(([_, e]) => e.meta && !e.track)
+    )
+    console.log(
+      "Pending that have track but no meta:",
+      pendingArr.filter(([_, e]) => e.track && !e.meta)
+    )
+    console.log(
+      "Pending that have both meta and track:",
+      pendingArr.filter(([_, e]) => e.track && e.meta)
+    )
+    if (!entry?.meta || !entry?.track) return // wait for the other side
+
+    this.pending.delete(trackId)
+
+    const { clientId, streamGroupId, kind } = entry.meta
+    const track = entry.track
+
+    if (!this.resolvedStreams.has(streamGroupId)) {
+      this.resolvedStreams.set(streamGroupId, {
+        clientId,
+        tracks: new Map(),
+      })
     }
 
+    const resolved = this.resolvedStreams.get(streamGroupId)!
+    resolved.tracks.set(kind, track)
+
+    this.attachOrUpdate(streamGroupId)
+  }
+
+  private attachOrUpdate(streamGroupId: string) {
+    const resolved = this.resolvedStreams.get(streamGroupId)!
+    const videoTrack = resolved.tracks.get("video")
+    const audioTrack = resolved.tracks.get("audio")
+
+    // Attach as soon as we have video; update again if audio arrives later
+    if (!videoTrack) return
+
+    const ms = new MediaStream()
+    ms.addTrack(videoTrack)
+    if (audioTrack) ms.addTrack(audioTrack)
+
+    this.options.onAddedRemoteStream({
+      id: streamGroupId,
+      stream: ms,
+      type: "camera",
+      isLocal: false,
+    })
+  }
+
+  async setLocalStreams(newStreams: MediaStreamItem[]) {
+    if (!this.peerConnection) throw new Error("Peer connection not initialized")
+
+    for (const newStream of newStreams) {
+      const isAlreadyAdded = this.localStreams.some(
+        (s) => s.id === newStream.id
+      )
+      if (isAlreadyAdded) continue
+
+      newStream.stream.getTracks().forEach((track) => {
+        this.emit("track_changed", {
+          trackId: track.id,
+          kind: track.kind,
+          streamGroupId: newStream.id,
+        })
+        this.peerConnection?.addTrack(track, newStream.stream)
+      })
+    }
+
+    this.localStreams = newStreams
+  }
+
+  private async sendOffer() {
+    if (!this.peerConnection) throw new Error("Peer connection not initialized")
     const offer = await this.peerConnection.createOffer()
     await this.peerConnection.setLocalDescription(offer)
-    return offer
+    this.emit("send_offer", offer)
   }
 
   private emit(eventName: string, data: any) {
@@ -233,7 +246,10 @@ export class WebRTCService {
   destroy() {
     this.peerConnection?.close()
     this.peerConnection = null
+    this.pending.clear()
+    this.resolvedStreams.clear()
     this.wsService?.off("receive_answer")
     this.wsService?.off("ice_candidate")
+    this.wsService?.off("new_track")
   }
 }
