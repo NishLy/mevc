@@ -8,16 +8,16 @@ import (
 )
 
 type WsHub interface {
-	On(event string, callback func(conn WebSocketConnection, data ...interface{}))
+	On(event string, callback func(conn WebSocketConnection, data ...any))
 	Join(roomId string, conn WebSocketConnection)
-	Emit(event string, data ...interface{})
-	EmitTo(roomId string, event string, data ...interface{})
+	Emit(event string, data ...any)
+	EmitTo(roomId string, event string, data ...any)
 	readMessage(connection *websocket.Conn) (int, []byte, error)
 	Register(conn *websocket.Conn) WebSocketConnection
 	Unregister(conn WebSocketConnection)
 	GetRoom(conn WebSocketConnection) *string
 	parseJson(data []byte) (WsMessage, error)
-	handleMessage(eventName string, message WsMessage, conn WebSocketConnection)
+	handleMessage(eventName string, message WsMessage, conn WebSocketConnection, isHubCall bool)
 	isAllowToBroadcast(eventName string) bool
 }
 
@@ -25,7 +25,7 @@ type wsHub struct {
 	currentId int
 	clients   map[string]WebSocketConnection
 	rooms     map[string][]WebSocketConnection
-	listeners map[string][]func(conn WebSocketConnection, data ...interface{})
+	listeners map[string][]func(conn WebSocketConnection, data ...any)
 	mu        sync.RWMutex
 }
 
@@ -33,14 +33,14 @@ func NewWsHub() WsHub {
 	return &wsHub{
 		clients:   make(map[string]WebSocketConnection),
 		rooms:     make(map[string][]WebSocketConnection),
-		listeners: make(map[string][]func(conn WebSocketConnection, data ...interface{})),
+		listeners: make(map[string][]func(conn WebSocketConnection, data ...any)),
 		mu:        sync.RWMutex{},
 	}
 }
 
-func (w *wsHub) On(event string, callback func(conn WebSocketConnection, data ...interface{})) {
+func (w *wsHub) On(event string, callback func(conn WebSocketConnection, data ...any)) {
 	if _, ok := w.listeners[event]; !ok {
-		w.listeners[event] = []func(conn WebSocketConnection, data ...interface{}){}
+		w.listeners[event] = []func(conn WebSocketConnection, data ...any){}
 	}
 	w.listeners[event] = append(w.listeners[event], callback)
 }
@@ -52,7 +52,7 @@ func (w *wsHub) Join(roomId string, conn WebSocketConnection) {
 	w.rooms[roomId] = append(w.rooms[roomId], conn)
 }
 
-func (w *wsHub) Emit(event string, data ...interface{}) {
+func (w *wsHub) Emit(event string, data ...any) {
 	if !w.isAllowedToEmit(event) {
 		return
 	}
@@ -62,7 +62,7 @@ func (w *wsHub) Emit(event string, data ...interface{}) {
 	}
 }
 
-func (w *wsHub) EmitTo(roomId string, event string, data ...interface{}) {
+func (w *wsHub) EmitTo(roomId string, event string, data ...any) {
 	if !w.isAllowedToEmit(event) {
 		return
 	}
@@ -83,8 +83,8 @@ func (w *wsHub) parseJson(data []byte) (WsMessage, error) {
 	return parsedData, err
 }
 
-func (w *wsHub) handleMessage(eventName string, message WsMessage, conn WebSocketConnection) {
-	if !w.isAllowToBroadcast(eventName) {
+func (w *wsHub) handleMessage(eventName string, message WsMessage, conn WebSocketConnection, isHubCall bool) {
+	if !w.isAllowToBroadcast(eventName) && !isHubCall {
 		return
 	}
 

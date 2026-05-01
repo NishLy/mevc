@@ -13,6 +13,7 @@ import (
 	"github.com/NishLy/go-fiber-boilerplate/internal/middleware"
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/database"
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/ws"
+	"github.com/NishLy/go-fiber-boilerplate/internal/room"
 	"github.com/NishLy/go-fiber-boilerplate/internal/routes"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/gofiber/fiber/v3"
@@ -52,6 +53,7 @@ func main() {
 		WsHub:  ws.NewWsFiber(fiberApp),
 	}
 
+	room.Bootstrap(appContainer.WsHub)
 	routes.Setup(appContainer, fiberApp)
 
 	logger.Sugar.Info("Starting server on " + configApp.HOST + ":" + configApp.PORT)

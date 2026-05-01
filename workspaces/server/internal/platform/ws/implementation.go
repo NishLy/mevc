@@ -20,12 +20,10 @@ func NewWsFiber(app *fiber.App) WsHub {
 	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
 		conn := hub.Register(c)
 
-		logger.Sugar.Infof("New WebSocket connection established: %s", conn.ID())
-
 		hub.handleMessage("connect", WsMessage{
 			Event: "connect",
 			Data:  []interface{}{},
-		}, conn)
+		}, conn, true)
 
 		conn.Emit("connected", "Welcome to the WebSocket server!")
 
@@ -40,7 +38,7 @@ func NewWsFiber(app *fiber.App) WsHub {
 				},
 				Event: "disconnect",
 				Data:  []interface{}{},
-			}, conn)
+			}, conn, true)
 		}()
 
 		var (
@@ -62,7 +60,7 @@ func NewWsFiber(app *fiber.App) WsHub {
 					continue
 				}
 
-				hub.handleMessage(parsedMsg.Event, parsedMsg, conn)
+				hub.handleMessage(parsedMsg.Event, parsedMsg, conn, false)
 			}
 
 		}
