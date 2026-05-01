@@ -56,12 +56,14 @@ func (w *wsHub) Join(roomId string, conn WebSocketConnection) {
 		w.rooms[roomId] = []WebSocketConnection{}
 	}
 	w.rooms[roomId] = append(w.rooms[roomId], conn)
+	conn.(*webSocketConnection).GroupId = roomId
 }
 
 func (w *wsHub) Leave(roomId string, conn WebSocketConnection) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.leaveInternal(roomId, conn)
+	conn.(*webSocketConnection).GroupId = ""
 }
 
 func (w *wsHub) Emit(event string, data ...any) {

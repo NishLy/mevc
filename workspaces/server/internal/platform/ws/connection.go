@@ -24,18 +24,28 @@ type WebSocketConnection interface {
 	RawConn // Embed your local interface
 	ID() string
 	Emit(event string, data ...interface{}) error
+	GetGroupId() *string
 }
 
 type webSocketConnection struct {
-	conn RawConn // Use the interface type here
-	id   string
+	conn    RawConn // Use the interface type here
+	id      string
+	GroupId string
 }
 
 func NewWebsocketConn(conn RawConn, id string) WebSocketConnection {
 	return &webSocketConnection{
-		conn: conn,
-		id:   id,
+		conn:    conn,
+		id:      id,
+		GroupId: "",
 	}
+}
+
+func (w *webSocketConnection) GetGroupId() *string {
+	if w.GroupId == "" {
+		return nil
+	}
+	return &w.GroupId
 }
 
 func (w *webSocketConnection) Emit(event string, data ...interface{}) error {
