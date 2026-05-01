@@ -1,10 +1,12 @@
+import WSservice from "@/lib/ws"
+
 interface WebRTCServiceProps {
   onRemoteStream: (stream: MediaStream) => void
 }
 
 export class WebRTCService {
   private peerConnection: RTCPeerConnection | null = null
-  private socket: SocketIOClient.Socket | null = null
+  private wsService: WSservice | null = null
   private localStreams: MediaStream[] = []
   private roomId: string = ""
 
@@ -14,14 +16,14 @@ export class WebRTCService {
 
   constructor(
     roomId: string,
-    socket: SocketIOClient.Socket,
+    wsService: WSservice,
     localStreams: MediaStream[],
     options?: WebRTCServiceProps
   ) {
     this.bindAllMethods()
 
     this.roomId = roomId
-    this.socket = socket
+    this.wsService = wsService
     this.localStreams = localStreams
     if (options) {
       this.options = options
@@ -50,7 +52,7 @@ export class WebRTCService {
     this.sendOffer()
 
     // Listen for the answer from the remote peer
-    this.socket?.on(
+    this.wsService?.on(
       "receive_answer",
       async (answer: RTCSessionDescriptionInit) => {
         if (!this.peerConnection) {
@@ -98,15 +100,15 @@ export class WebRTCService {
   }
 
   private emit(eventName: string, data: any) {
-    if (!this.socket || !this.roomId) {
+    if (!this.wsService || !this.roomId) {
       throw new Error("Socket or room ID not initialized")
     }
-    this.socket.emit(eventName, this.roomId, data)
+    this.wsService.emit(eventName, data)
   }
 
   destroy() {
     this.peerConnection?.close()
     this.peerConnection = null
-    this.socket?.off("receive_answer")
+    this.wsService?.off("receive_answer")
   }
 }

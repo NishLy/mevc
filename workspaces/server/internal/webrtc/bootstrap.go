@@ -25,10 +25,10 @@ var udpConns = map[string]*udpConn{
 }
 
 func WebRTCBootstrap(io *socketio.Server) {
-	pc := mustCreatePeerConnection()
+	pc := MustCreatePeerConnection()
 	defer pc.Close()
 
-	mustAddTransceivers(pc)
+	MustAddTransceivers(pc)
 	mustDialUDP()
 	registerHandlers(pc, io)
 
@@ -36,25 +36,25 @@ func WebRTCBootstrap(io *socketio.Server) {
 	select {}
 }
 
-func mustCreatePeerConnection() *webrtc.PeerConnection {
+func MustCreatePeerConnection() *webrtc.PeerConnection {
 	me := &webrtc.MediaEngine{}
-	mustRegisterCodecs(me)
+	MustRegisterCodecs(me)
 
 	ir := &interceptor.Registry{}
 	pli, err := intervalpli.NewReceiverInterceptor()
-	must(err)
+	Must(err)
 	ir.Add(pli)
-	must(webrtc.RegisterDefaultInterceptors(me, ir))
+	Must(webrtc.RegisterDefaultInterceptors(me, ir))
 
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithInterceptorRegistry(ir))
 	pc, err := api.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
 	})
-	must(err)
+	Must(err)
 	return pc
 }
 
-func mustRegisterCodecs(me *webrtc.MediaEngine) {
+func MustRegisterCodecs(me *webrtc.MediaEngine) {
 	codecs := []struct {
 		mime      string
 		clockRate uint32
@@ -64,28 +64,28 @@ func mustRegisterCodecs(me *webrtc.MediaEngine) {
 		{webrtc.MimeTypeOpus, 48000, webrtc.RTPCodecTypeAudio},
 	}
 	for _, c := range codecs {
-		must(me.RegisterCodec(webrtc.RTPCodecParameters{
+		Must(me.RegisterCodec(webrtc.RTPCodecParameters{
 			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: c.mime, ClockRate: c.clockRate},
 		}, c.kind))
 	}
 }
 
-func mustAddTransceivers(pc *webrtc.PeerConnection) {
+func MustAddTransceivers(pc *webrtc.PeerConnection) {
 	for _, kind := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeAudio, webrtc.RTPCodecTypeVideo} {
 		_, err := pc.AddTransceiverFromKind(kind)
-		must(err)
+		Must(err)
 	}
 }
 
 func mustDialUDP() {
 	laddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:")
-	must(err)
+	Must(err)
 
 	for _, c := range udpConns {
 		raddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", c.port))
-		must(err)
+		Must(err)
 		c.conn, err = net.DialUDP("udp", laddr, raddr)
-		must(err)
+		Must(err)
 	}
 }
 
@@ -107,14 +107,14 @@ func registerHandlers(pc *webrtc.PeerConnection, io *socketio.Server) {
 	io.OnEvent("/", "send_offer", func(c socketio.Conn, id string, offer interface{}) {
 		fmt.Printf("Received offer from client %s\n", c.ID())
 
-		pc := mustCreatePeerConnection()
-		mustAddTransceivers(pc)
+		pc := MustCreatePeerConnection()
+		MustAddTransceivers(pc)
 
-		must(pc.SetRemoteDescription(offer.(webrtc.SessionDescription)))
+		Must(pc.SetRemoteDescription(offer.(webrtc.SessionDescription)))
 
 		answer, err := pc.CreateAnswer(nil)
-		must(err)
-		must(pc.SetLocalDescription(answer))
+		Must(err)
+		Must(pc.SetLocalDescription(answer))
 
 		go func() {
 			<-webrtc.GatheringCompletePromise(pc)
@@ -137,10 +137,10 @@ func forwardTrack(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		if err != nil {
 			panic(err)
 		}
-		must(pkt.Unmarshal(buf[:n]))
+		Must(pkt.Unmarshal(buf[:n]))
 		pkt.PayloadType = conn.payloadType
 		n, err = pkt.MarshalTo(buf)
-		must(err)
+		Must(err)
 
 		if _, err = conn.conn.Write(buf[:n]); err != nil {
 			var opErr *net.OpError
@@ -152,7 +152,7 @@ func forwardTrack(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 	}
 }
 
-func must(err error) {
+func Must(err error) {
 	if err != nil {
 		panic(err)
 	}

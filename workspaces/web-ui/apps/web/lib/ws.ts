@@ -14,6 +14,9 @@ interface WSserviceProps {
     reconnectAttempts?: number
     reconnectOnClose?: boolean
     autoConnect?: boolean
+    listeners?: {
+      [eventName: string]: (...data: any[]) => void
+    }
   }
 }
 
@@ -29,9 +32,17 @@ class WSservice {
   id: string | null = null
   connected: boolean = false
 
+  onOpen: ((event: Event) => void) | null = null
+
   constructor({ url, options }: WSserviceProps) {
     this.url = url
     this.ws = null
+
+    if (options?.listeners) {
+      for (const [eventName, handler] of Object.entries(options.listeners)) {
+        this.on(eventName, handler)
+      }
+    }
 
     if (options?.autoConnect !== false) {
       this.connect()
@@ -52,7 +63,14 @@ class WSservice {
 
   connect() {
     this.ws = new WebSocket(this.url)
-    this.ws.onopen = (msg) => {}
+
+    this.ws.onopen = (msg) => {
+      this.connected = true
+      if (this.onOpen) {
+        this.onOpen(msg)
+      }
+    }
+
     this.ws.onmessage = (event) => {
       const data = JSON.parse(event.data) as WsMessage
       const handlers = this.listeners.get(data.event)
@@ -83,15 +101,20 @@ class WSservice {
     this.ws?.send(JSON.stringify({ event: eventName, data }))
   }
 
-  on(type: string, callback: (eventName: string, ...data: any[]) => void) {
-    const handlers = this.listeners.get(type) || []
+  on(eventName: string, callback: (...data: any[]) => void) {
+    const handlers = this.listeners.get(eventName) || []
     handlers.push(callback)
-    this.listeners.set(type, handlers)
+    this.listeners.set(eventName, handlers)
+  }
+
+  off(eventName: string) {
+    this.listeners.delete(eventName)
   }
 
   close() {
     this.reconnectOnClose = false
     this.ws?.close()
+    this.listeners.clear()
   }
 }
 
