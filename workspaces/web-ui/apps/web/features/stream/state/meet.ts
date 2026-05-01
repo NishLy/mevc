@@ -2,6 +2,17 @@ import { create } from "zustand/react"
 import { MediaStreamItem } from "../types/service"
 import { MediaStreamController } from "../services/local"
 
+interface RemoteTrack {
+  clientId: string
+  trackId: string
+  kind: string
+}
+
+interface RemoteTrackCombination {
+  clientId: string
+  tracks: RemoteTrack[]
+}
+
 interface MeetState {
   roomId: string | null
   pc: RTCPeerConnection | null

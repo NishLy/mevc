@@ -20,8 +20,6 @@ func NewWsFiber(app *fiber.App) WsHub {
 	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
 		conn := hub.Register(c)
 
-		logger.Sugar.Infof("Registered new connection with ID: %s", conn.ID())
-
 		hub.handleMessage("connect", WsMessage{
 			Event: "connect",
 			Data:  []interface{}{},
@@ -53,8 +51,6 @@ func NewWsFiber(app *fiber.App) WsHub {
 			if mt, msg, err = hub.readMessage(c); err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
 					logger.Sugar.Errorf("unexpected read error: %v", err)
-				} else {
-					logger.Sugar.Infof("client disconnected normally: %v", err)
 				}
 				break
 			}

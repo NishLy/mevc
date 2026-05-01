@@ -5,8 +5,8 @@ import {
   MediaStreamOptions,
 } from "../types/service"
 
-const LOCAL_STREAM_ID = "local_stream"
-const LOCAL_SCREEN_SHARE_STREAM_ID = "local_screen_share_stream"
+const LOCAL_STREAM_CONSTANT = "local_stream"
+const LOCAL_SCREEN_SHARE_STREAM_CONSTRAINT = "local_screen_share_stream"
 
 function createBlackVideoTrack(width = 640, height = 480) {
   const canvas = Object.assign(document.createElement("canvas"), {
@@ -58,7 +58,10 @@ export class MediaStreamController {
     audioEnabled: true,
   }
 
-  constructor(options?: MediaStreamOptions) {
+  constructor(
+    public id: string,
+    options?: MediaStreamOptions
+  ) {
     if (options) {
       this.options = { ...this.options, ...options }
     }
@@ -132,7 +135,7 @@ export class MediaStreamController {
       setTimeout(() => {
         console.log(this.currentLocalStream, this.onLocalStreamUpdateCallback)
         if (this.currentLocalStream) {
-          this.setLocalStream(LOCAL_STREAM_ID, id, this.currentLocalStream)
+          this.setLocalStream(LOCAL_STREAM_CONSTANT, this.currentLocalStream)
         }
 
         if (this.onDevicesUpdatedCallback) {
@@ -142,21 +145,16 @@ export class MediaStreamController {
     }
   }
 
-  private setLocalStream(
-    id = LOCAL_STREAM_ID,
-    streamId: string,
-    stream: MediaStream
-  ) {
+  private setLocalStream(type = LOCAL_STREAM_CONSTANT, stream: MediaStream) {
+    const id = this.id + "_" + type
     const item = this.localStreams.find((s) => s.id === id)
 
     if (item) {
       item.stream = stream
-      item.streamId = streamId
     } else {
       this.localStreams.push({
         id,
         stream,
-        streamId,
         type: "camera",
         isLocal: true,
       })
@@ -167,7 +165,7 @@ export class MediaStreamController {
     }
   }
 
-  private removeLocalStream(id = LOCAL_STREAM_ID) {
+  private removeLocalStream(id = LOCAL_STREAM_CONSTANT) {
     this.localStreams = this.localStreams.filter((s) => s.id !== id)
     if (this.onLocalStreamUpdateCallback) {
       this.onLocalStreamUpdateCallback(this.localStreams)
@@ -217,7 +215,7 @@ export class MediaStreamController {
         this.options.audioEnabled
       )
       this.currentLocalStream = stream.stream
-      this.setLocalStream(LOCAL_STREAM_ID, stream.id, this.currentLocalStream)
+      this.setLocalStream(LOCAL_STREAM_CONSTANT, this.currentLocalStream)
       if (this.onVideoDeviceChangeCallback) {
         this.onVideoDeviceChangeCallback(newDeviceId)
       }
@@ -243,7 +241,7 @@ export class MediaStreamController {
         this.options.audioEnabled
       )
       this.currentLocalStream = stream.stream
-      this.setLocalStream(LOCAL_STREAM_ID, stream.id, this.currentLocalStream)
+      this.setLocalStream(LOCAL_STREAM_CONSTANT, this.currentLocalStream)
       if (this.onAudioDeviceChangeCallback) {
         this.onAudioDeviceChangeCallback(newDeviceId)
       }
@@ -336,7 +334,7 @@ export class MediaStreamController {
       this.stopMediaStream(this.currentScreenShareStream)
       if (this.currentScreenShareStream) {
         this.currentScreenShareStream = null
-        this.removeLocalStream(LOCAL_SCREEN_SHARE_STREAM_ID)
+        this.removeLocalStream(LOCAL_SCREEN_SHARE_STREAM_CONSTRAINT)
       }
     }
 
@@ -358,8 +356,7 @@ export class MediaStreamController {
     this.currentScreenShareStream = screenStream.stream
     this.isCurrentlySharingScreen = true
     this.setLocalStream(
-      LOCAL_SCREEN_SHARE_STREAM_ID,
-      screenStream.id,
+      LOCAL_SCREEN_SHARE_STREAM_CONSTRAINT,
       screenStream.stream
     )
 

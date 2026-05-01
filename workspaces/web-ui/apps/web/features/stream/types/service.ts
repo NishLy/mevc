@@ -5,7 +5,6 @@ export type AudioOpenSettings = MediaStreamConstraints["audio"] & {}
 export interface MediaStreamItem<T = any> {
   id: string
   stream: MediaStream
-  streamId: string
   type: "camera" | "screen_share"
   isLocal: boolean
   metadata?: T

@@ -1,7 +1,6 @@
 package rtc
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/ws"
@@ -11,12 +10,26 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+type ManagedTransceiver struct {
+	t    *webrtc.RTPTransceiver
+	kind webrtc.RTPCodecType
+	mu   sync.Mutex
+	busy bool
+}
+
 type Session struct {
 	pc                *webrtc.PeerConnection
+	transceivers      []*ManagedTransceiver // ← replaces raw GetTransceivers()
 	subscribedTracks  map[string]*webrtc.TrackRemote
 	pendingCandidates []webrtc.ICECandidateInit
 	remoteSet         bool
+	clientId          string
 	mu                sync.Mutex
+}
+
+func isAlreadyAssigned(tracks map[string]*webrtc.TrackRemote, trackId string) bool {
+	_, exists := tracks[trackId]
+	return exists
 }
 
 type SessionManager struct {
@@ -52,6 +65,19 @@ func (sm *SessionManager) RemoveSession(connID string) {
 	delete(sm.sessions, connID)
 }
 
+type UserTrackMetadata struct {
+	trackId       string
+	kind          string
+	streamGroupId string
+	clientId      string
+}
+
+type UserTracksMetadata struct {
+	tracks []UserTrackMetadata
+}
+
+var GlobalUserTracksMetadata = make(map[string]*UserTracksMetadata)
+
 var MAXIMUM_TRANCEIVERS = 10
 
 var (
@@ -63,7 +89,7 @@ func WebRTCBootstrap(hub ws.WsHub) {
 	RegisterHandlers(hub)
 }
 
-func MustCreatePeerConnection() *webrtc.PeerConnection {
+func MustCreatePeerConnection() (*webrtc.PeerConnection, []*ManagedTransceiver) {
 	me := &webrtc.MediaEngine{}
 	MustRegisterCodecs(me)
 
@@ -77,14 +103,20 @@ func MustCreatePeerConnection() *webrtc.PeerConnection {
 	pc, err := api.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
 	})
+	Must(err)
 
+	var managed []*ManagedTransceiver
 	for i := 0; i < MAXIMUM_TRANCEIVERS; i++ {
-		pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo)
-		pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio)
+		for _, kind := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeVideo, webrtc.RTPCodecTypeAudio} {
+			t, err := pc.AddTransceiverFromKind(kind, webrtc.RTPTransceiverInit{
+				Direction: webrtc.RTPTransceiverDirectionSendrecv,
+			})
+			Must(err)
+			managed = append(managed, &ManagedTransceiver{t: t, kind: kind})
+		}
 	}
 
-	Must(err)
-	return pc
+	return pc, managed
 }
 
 func MustRegisterCodecs(me *webrtc.MediaEngine) {
@@ -103,28 +135,8 @@ func MustRegisterCodecs(me *webrtc.MediaEngine) {
 	}
 }
 
-func MustAddTransceivers(pc *webrtc.PeerConnection) {
-	for _, kind := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeAudio, webrtc.RTPCodecTypeVideo} {
-		_, err := pc.AddTransceiverFromKind(kind)
-		Must(err)
-	}
-}
-
-// func mustDialUDP() {
-// 	laddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:")
-// 	Must(err)
-
-// 	for _, c := range udpConns {
-// 		raddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", c.port))
-// 		Must(err)
-// 		c.conn, err = net.DialUDP("udp", laddr, raddr)
-// 		Must(err)
-// 	}
-// }
-
-func RegisterPeerCallbacks(pc *webrtc.PeerConnection, conn ws.WebSocketConnection) {
+func RegisterPeerCallbacks(hub ws.WsHub, pc *webrtc.PeerConnection, conn ws.WebSocketConnection) {
 	pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		logger.Sugar.Infof("Received new track from client %s: %s", conn.ID(), track.ID())
 
 		groupID := conn.GetGroupId()
 		if groupID == nil {
@@ -132,11 +144,19 @@ func RegisterPeerCallbacks(pc *webrtc.PeerConnection, conn ws.WebSocketConnectio
 		}
 
 		sessionManager, exists := GlobalSessionManager[*groupID]
+		session, exists := sessionManager.GetSession(conn.ID())
+
+		hub.EmitTo(*groupID, "new_track", map[string]interface{}{
+			"clientId": session.clientId,
+			"trackId":  track.ID(),
+			"kind":     track.Kind().String(),
+		})
 
 		if exists {
 			for _, s := range sessionManager.sessions {
-				if s.pc != pc {
-					forwardTrack(track, receiver, s.pc)
+				if s.pc != pc && !isAlreadyAssigned(s.subscribedTracks, track.ID()) {
+					forwardTrack(track, receiver, s)
+					s.subscribedTracks[track.ID()] = track
 				}
 			}
 		}
@@ -155,17 +175,28 @@ func RegisterPeerCallbacks(pc *webrtc.PeerConnection, conn ws.WebSocketConnectio
 				return
 			}
 
-			Session, exists := GlobalSessionManager[*groupID].GetSession(conn.ID())
-			if exists {
-				Session.pc.Close()
-				GlobalSessionManager[*groupID].RemoveSession(conn.ID())
+			SessionManager, exists := GlobalSessionManager[*groupID]
+			if !exists {
+				logger.Sugar.Warnf("Session manager for group %s does not exist", *groupID)
+				return
 			}
 
-			if len(GlobalSessionManager[*groupID].sessions) == 0 {
+			Session, exists := SessionManager.GetSession(conn.ID())
+			if !exists {
+				logger.Sugar.Warnf("Session for connection %s does not exist in group %s", conn.ID(), *groupID)
+				return
+			}
+
+			if exists {
+				Session.pc.Close()
+				SessionManager.RemoveSession(conn.ID())
+			}
+
+			if len(SessionManager.sessions) == 0 {
 				delete(GlobalSessionManager, *groupID)
 			}
 
-			conn.Emit("peer_connection_closed", "Peer connection closed due to failure or closure")
+			conn.Emit("peer_connection_closed", Session.clientId, "Peer connection closed due to failure or closure")
 		}
 	})
 
@@ -179,42 +210,93 @@ func RegisterPeerCallbacks(pc *webrtc.PeerConnection, conn ws.WebSocketConnectio
 			return
 		}
 
-		conn.Emit("ice_candidate", c)
+		Session := GetSessionNested(*groupID, conn.ID())
+
+		if Session == nil {
+			return
+		}
+
+		conn.Emit("ice_candidate", Session.clientId, c)
 	})
 }
 
-func forwardTrack(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver, peer *webrtc.PeerConnection) {
-	for _, t := range peer.GetTransceivers() {
-		sender := t.Sender()
-
-		// find empty slot
-		if sender.Track() == nil {
-			localTrack, _ := webrtc.NewTrackLocalStaticRTP(
-				track.Codec().RTPCodecCapability,
-				track.ID(),
-				track.StreamID(),
-			)
-
-			sender.ReplaceTrack(localTrack)
-
-			// start forwarding RTP
-			go func() {
-				buf := make([]byte, 1500)
-				for {
-					n, _, err := track.Read(buf)
-					if err != nil {
-						return
-					}
-					localTrack.Write(buf[:n])
-				}
-			}()
-
-			fmt.Println("Track assigned to slot")
-			return
-		}
+func GetSessionNested(groupID string, connID string) *Session {
+	SessionManager, exists := GlobalSessionManager[groupID]
+	if !exists {
+		return nil
 	}
 
-	fmt.Println("No available slot")
+	Session, exists := SessionManager.GetSession(connID)
+	if !exists {
+		return nil
+	}
+
+	return Session
+}
+
+func forwardTrack(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver, session *Session) {
+	logger.Sugar.Debugf("Looking for slot: track=%s kind=%s", track.ID(), track.Kind())
+
+	for _, mt := range session.transceivers {
+		if mt.kind != track.Kind() {
+			continue // skip if kind doesn't match
+		}
+
+		mt.mu.Lock()
+		if mt.busy {
+			mt.mu.Unlock()
+			continue
+		}
+		mt.busy = true
+		mt.mu.Unlock()
+
+		localTrack, err := webrtc.NewTrackLocalStaticRTP(
+			track.Codec().RTPCodecCapability,
+			track.ID(),
+			track.StreamID(),
+		)
+		if err != nil {
+			mt.mu.Lock()
+			mt.busy = false
+			mt.mu.Unlock()
+			return
+		}
+
+		if err := mt.t.Sender().ReplaceTrack(localTrack); err != nil {
+			logger.Sugar.Warnf("ReplaceTrack failed for track %s: %v", track.ID(), err)
+			mt.mu.Lock()
+			mt.busy = false
+			mt.mu.Unlock()
+			continue
+		}
+
+		go func() {
+			defer func() {
+				mt.t.Sender().ReplaceTrack(nil)
+				mt.mu.Lock()
+				mt.busy = false
+				mt.mu.Unlock()
+				session.mu.Lock()
+				delete(session.subscribedTracks, track.ID())
+				session.mu.Unlock()
+				logger.Sugar.Debugf("Slot freed for track %s", track.ID())
+			}()
+
+			buf := make([]byte, 1500)
+			for {
+				n, _, err := track.Read(buf)
+				if err != nil {
+					return
+				}
+				localTrack.Write(buf[:n])
+			}
+		}()
+
+		logger.Sugar.Infof("Track assigned to slot: %s (kind=%s)", track.ID(), track.Kind())
+		return
+	}
+
+	logger.Sugar.Warnf("No available transceiver slot for track %s (kind=%s)", track.ID(), track.Kind())
 }
 
 func Must(err error) {
@@ -232,11 +314,16 @@ func ptrUint16(v uint16) *uint16 {
 }
 
 func RegisterHandlers(hub ws.WsHub) {
-	hub.On("send_offer", handleOffer)
+	hub.On("send_offer", func(conn ws.WebSocketConnection, data ...any) {
+		handleOffer(hub, conn, data...)
+	})
 	hub.On("ice_candidate", handleIceCandidate)
+	hub.On("track_changed", func(conn ws.WebSocketConnection, data ...any) {
+		handleTrackChanged(hub, conn, data...)
+	})
 }
 
-func handleOffer(conn ws.WebSocketConnection, data ...any) {
+func handleOffer(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	logger.Sugar.Infof("Received offer from client %s", conn.ID())
 
 	groupID := conn.GetGroupId()
@@ -246,22 +333,24 @@ func handleOffer(conn ws.WebSocketConnection, data ...any) {
 	}
 
 	// 1. Setup PeerConnection
-	pc := MustCreatePeerConnection()
-	MustAddTransceivers(pc)
-	RegisterPeerCallbacks(pc, conn)
-
-	session := &Session{pc: pc}
+	pc, managed := MustCreatePeerConnection()
+	RegisterPeerCallbacks(hub, pc, conn)
 
 	// Track session
-	logger.Sugar.Infof("Creating new session for connection %s in group %s", conn.ID(), *groupID)
 	if _, exists := GlobalSessionManager[*groupID]; !exists {
+		logger.Sugar.Infof("Creating new session manager for group %s", *groupID)
 		GlobalSessionManager[*groupID] = NewSessionManager(*groupID)
 	}
 
-	GlobalSessionManager[*groupID].AddSession(conn.ID(), session)
+	clientID, ok := data[0].(string)
+	if !ok {
+		return
+	}
+
+	session := &Session{pc: pc, subscribedTracks: make(map[string]*webrtc.TrackRemote), clientId: clientID, transceivers: managed}
 
 	// 2. Parse SDP
-	offerMap, ok := data[0].(map[string]interface{})
+	offerMap, ok := data[1].(map[string]interface{})
 	if !ok {
 		return
 	}
@@ -290,13 +379,20 @@ func handleOffer(conn ws.WebSocketConnection, data ...any) {
 	Must(pc.SetLocalDescription(answer))
 
 	logger.Sugar.Infof("Sending answer to client %s", conn.ID())
-	conn.Emit("receive_answer", answer)
+	GlobalSessionManager[*groupID].AddSession(conn.ID(), session)
+	conn.Emit("receive_answer", clientID, answer)
 }
 
 func handleIceCandidate(conn ws.WebSocketConnection, data ...any) {
 	groupID := conn.GetGroupId()
+
 	if groupID == nil {
 		return
+	}
+
+	if _, exists := GlobalSessionManager[*groupID]; !exists {
+		logger.Sugar.Infof("Creating new session manager for group %s", *groupID)
+		GlobalSessionManager[*groupID] = NewSessionManager(*groupID)
 	}
 
 	sm, exists := GlobalSessionManager[*groupID]
@@ -306,7 +402,7 @@ func handleIceCandidate(conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
-	candidateMap := data[0].(map[string]interface{})
+	candidateMap := data[1].(map[string]interface{})
 
 	candidate := webrtc.ICECandidateInit{
 		Candidate:     candidateMap["candidate"].(string),
@@ -321,4 +417,41 @@ func handleIceCandidate(conn ws.WebSocketConnection, data ...any) {
 	} else {
 		Must(session.pc.AddICECandidate(candidate))
 	}
+}
+
+func handleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
+	connGroupPtr := conn.GetGroupId()
+	if connGroupPtr == nil {
+		logger.Sugar.Warnf("Connection %s does not have a group ID, cannot emit track change", conn.ID())
+		return
+	}
+
+	clientId := data[0].(string)
+	trackMetadatMap := data[1].(map[string]interface{})
+
+	trackId := trackMetadatMap["trackId"].(string)
+	kind := trackMetadatMap["kind"].(string)
+	streamGroupId := trackMetadatMap["streamGroupId"].(string)
+
+	logger.Sugar.Infof("Received track change from client %s: trackId=%s, kind=%s, streamGroupId=%s", clientId, trackId, kind, streamGroupId)
+
+	if _, exists := GlobalUserTracksMetadata[clientId]; !exists {
+		GlobalUserTracksMetadata[clientId] = &UserTracksMetadata{
+			tracks: []UserTrackMetadata{},
+		}
+	}
+
+	GlobalUserTracksMetadata[clientId].tracks = append(GlobalUserTracksMetadata[clientId].tracks, UserTrackMetadata{
+		trackId:       trackId,
+		kind:          kind,
+		streamGroupId: streamGroupId,
+		clientId:      clientId,
+	})
+
+	hub.EmitTo(*connGroupPtr, "track_changed", map[string]interface{}{
+		"clientId":      clientId,
+		"trackId":       trackId,
+		"kind":          kind,
+		"streamGroupId": streamGroupId,
+	})
 }

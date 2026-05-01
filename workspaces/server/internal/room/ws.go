@@ -8,7 +8,6 @@ import (
 func Bootstrap(hub ws.WsHub) {
 
 	hub.On("connect", func(conn ws.WebSocketConnection, data ...any) {
-		logger.Sugar.Infof("New connection: %s", conn.ID())
 	})
 
 	hub.On("disconnect", func(conn ws.WebSocketConnection, data ...any) {
@@ -22,7 +21,6 @@ func Bootstrap(hub ws.WsHub) {
 		}
 
 		hub.Join(roomId, conn)
-		logger.Sugar.Infof("Connection %s joined room %s", conn.ID(), roomId)
 	})
 
 	hub.On("leave_room", func(conn ws.WebSocketConnection, data ...any) {
@@ -31,7 +29,6 @@ func Bootstrap(hub ws.WsHub) {
 		}
 
 		hub.Leave(*hub.GetRoom(conn), conn)
-		logger.Sugar.Infof("Connection %s left room %s", conn.ID(), *hub.GetRoom(conn))
 	})
 
 }

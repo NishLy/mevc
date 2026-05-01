@@ -7,10 +7,13 @@ import { MediaStreamController } from "../services/local"
 import useMeet from "../state/meet"
 import { WebRTCService } from "../services/rtc"
 import WSservice from "@/lib/ws"
+import { MediaStreamItem } from "../types/service"
 
 interface RoomProps {
   roomId: string
 }
+
+const dummyClientId = crypto.randomUUID()
 
 export default function Room({ roomId }: RoomProps) {
   const localControllerRef = useRef<MediaStreamController | null>(null)
@@ -27,13 +30,26 @@ export default function Room({ roomId }: RoomProps) {
         listeners: {
           connect: () => {
             wsocketService.current?.emit("join_room", roomId)
+
+            useMeet.setState({ roomId })
             setWsConnected(true)
+          },
+          new_track: (data: {
+            clientId: string
+            trackId: string
+            kind: string
+          }) => {
+            console.log("New track received:", {
+              clientId: data.clientId,
+              trackId: data.trackId,
+              kind: data.kind,
+            })
           },
         },
       },
     })
 
-    const localMediaController = new MediaStreamController()
+    const localMediaController = new MediaStreamController(dummyClientId)
     localControllerRef.current = localMediaController
     useMeet.getState().setController(localMediaController)
 
@@ -61,11 +77,18 @@ export default function Room({ roomId }: RoomProps) {
     }
 
     const webRTCService = new WebRTCService(
+      dummyClientId,
       roomId,
       wsocketService.current!,
-      localStreams.map((stream) => stream.stream),
+      localStreams,
       {
-        onRemoteStream: (stream) => {},
+        onRemoteStream: (streamItem) => {
+          const newRemoteStreams = [
+            ...useMeet.getState().remoteStreams,
+            streamItem,
+          ]
+          useMeet.setState({ remoteStreams: newRemoteStreams })
+        },
       }
     )
 
