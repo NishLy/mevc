@@ -10,6 +10,14 @@
       "name": "Launch Chrome against localhost",
       "url": "http://localhost:3000",
       "webRoot": "${workspaceFolder}"
+    },
+    {
+      "name": "Attach to Air",
+      "type": "go",
+      "request": "attach",
+      "mode": "remote", // Try 'remote' if 'local' isn't listing processes
+      "port": 2345, // Delve's default debug port
+      "host": "127.0.0.1"
     }
   ]
 }

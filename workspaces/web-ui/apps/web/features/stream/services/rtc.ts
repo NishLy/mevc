@@ -27,6 +27,7 @@ export class WebRTCService {
   // Whichever side (socket or WebRTC) arrives second triggers resolution
   private pending: Map<string, PendingEntry> = new Map()
   private pendingInterval: NodeJS.Timeout | null = null
+  private ownTrackIds: Set<string> = new Set()
 
   // streamGroupId → { clientId, tracks: Map<kind, track> }
   private resolvedStreams: Map<
@@ -65,13 +66,34 @@ export class WebRTCService {
     // Fired by server when a publisher's track is being forwarded to us.
     // May arrive before or after ontrack.
     this.wsService?.on("new_track", (meta: TrackMeta) => {
-      // Ignore our own tracks being echoed back
-      // if (meta.clientId === this.clientId) return
+      if (meta.clientId === this.clientId) {
+        this.ownTrackIds.add(meta.trackId)
+        return
+      }
 
       const entry = this.pending.get(meta.trackId) ?? {}
       entry.meta = meta
       this.pending.set(meta.trackId, entry)
+
+      // No addTransceiver here — server pre-created sendrecv slots are already
+      // in SDP. A server-driven renegotiation (new_offer) will update the MSID
+      // so ontrack fires with the correct publisher track ID.
+      this.tryResolve(meta.trackId)
     })
+
+    // Server-driven renegotiation: after forwardTrack → ReplaceTrack the server
+    // sends a new offer whose MSID contains the publisher's real track ID.
+    // Answering causes the browser to fire ontrack with the matching ID.
+    this.wsService?.on(
+      "new_offer",
+      async (_clientId: string, offer: RTCSessionDescriptionInit) => {
+        if (!this.peerConnection) return
+        await this.peerConnection.setRemoteDescription(offer)
+        const answer = await this.peerConnection.createAnswer()
+        await this.peerConnection.setLocalDescription(answer)
+        this.emit("send_answer", answer)
+      }
+    )
 
     this.wsService?.on(
       "receive_answer",
@@ -91,11 +113,18 @@ export class WebRTCService {
     // has it ready when new_track fires on subscribers
     this.localStreams.forEach((streamItem) => {
       streamItem.stream.getTracks().forEach((track) => {
+        this.ownTrackIds.add(track.id)
         this.emit("track_changed", {
           trackId: track.id,
           kind: track.kind,
           streamGroupId: streamItem.id,
         })
+        console.warn(
+          "Emitting track_changed for track ID:",
+          track.id,
+          "kind:",
+          track.kind
+        )
       })
     })
 
@@ -119,13 +148,18 @@ export class WebRTCService {
     this.peerConnection.ontrack = (event: RTCTrackEvent) => {
       const track = event.track
 
+      if (this.ownTrackIds.has(track.id)) {
+        // This is our own track being looped back by the server; ignore it
+        return
+      }
+
+      console.warn("Received track event for track ID:", track.id)
+
       const entry = this.pending.get(track.id) ?? {}
       entry.track = track
       this.pending.set(track.id, entry)
 
-      if (this.pendingInterval === null) {
-        this.startIntervalCheck()
-      }
+      this.tryResolve(track.id)
     }
 
     this.peerConnection.onicecandidate = (event) => {
@@ -136,18 +170,9 @@ export class WebRTCService {
 
     this.peerConnection.onconnectionstatechange = () => {
       if (this.peerConnection?.connectionState === "connected") {
-        this.emit("joined_room", this.roomId)
+        this.emit("ice_connected", this.roomId)
       }
     }
-  }
-
-  private async startIntervalCheck() {
-    // In case of any missed events, this periodic check can help resolve pending tracks
-    this.pendingInterval = setInterval(() => {
-      for (const trackId of this.pending.keys()) {
-        this.tryResolve(trackId)
-      }
-    }, 5000)
   }
 
   // Called from both sides — only acts when both meta + track are present

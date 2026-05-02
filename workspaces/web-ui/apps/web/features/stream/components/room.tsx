@@ -20,6 +20,7 @@ export default function Room({ roomId }: RoomProps) {
   const webRTCServiceRef = useRef<WebRTCService | null>(null)
   const wsocketService = useRef<WSservice | null>(null)
   const [wsConnected, setWsConnected] = useState(false)
+  const [roomJoined, setRoomJoined] = useState(false)
   const { localStreams } = useMeet()
 
   useEffect(() => {
@@ -29,10 +30,14 @@ export default function Room({ roomId }: RoomProps) {
         autoConnect: true,
         listeners: {
           connect: () => {
-            wsocketService.current?.emit("join_room", roomId)
-
+            wsocketService.current?.emit("join_room", dummyClientId, roomId)
             useMeet.setState({ roomId })
             setWsConnected(true)
+          },
+          joined_room: (joinedRoomId: string) => {
+            if (joinedRoomId === roomId) {
+              setRoomJoined(true)
+            }
           },
         },
       },
@@ -49,7 +54,7 @@ export default function Room({ roomId }: RoomProps) {
   }, [])
 
   useEffect(() => {
-    if (localStreams.length === 0 || !wsConnected) {
+    if (localStreams.length === 0 || !wsConnected || !roomJoined) {
       return
     }
 
@@ -81,8 +86,7 @@ export default function Room({ roomId }: RoomProps) {
     return () => {
       webRTCService.destroy()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, localStreams])
+  }, [roomId, localStreams, roomJoined, wsConnected])
 
   return (
     <div>
