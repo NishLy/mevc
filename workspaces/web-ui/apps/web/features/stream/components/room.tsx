@@ -14,6 +14,7 @@ interface RoomProps {
 }
 
 const dummyClientId = crypto.randomUUID()
+console.log("Generated dummy client ID:", dummyClientId)
 
 export default function Room({ roomId }: RoomProps) {
   const localControllerRef = useRef<MediaStreamController | null>(null)

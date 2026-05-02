@@ -1,73 +1,52 @@
 package rtc
 
 import (
-	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/pion/webrtc/v4"
 )
 
-func forwardTrack(track *webrtc.TrackRemote, session Session) {
-	for _, mt := range session.GetTransceivers() {
-		if mt.kind != track.Kind() {
-			continue // skip if kind doesn't match
-		}
+func forwardTrack(track *webrtc.TrackRemote, session Session) (*webrtc.RTPTransceiver, error) {
+	pc := session.GetPeerConnection()
 
-		mt.mu.Lock()
-		if mt.busy {
-			mt.mu.Unlock()
-			continue
-		}
-
-		mt.busy = true
-		mt.mu.Unlock()
-
-		localTrack, err := webrtc.NewTrackLocalStaticRTP(
-			track.Codec().RTPCodecCapability,
-			track.ID(),
-			track.StreamID(),
-		)
-
-		if err != nil {
-			mt.mu.Lock()
-			mt.busy = false
-			mt.mu.Unlock()
-			return
-		}
-
-		if err := mt.t.Sender().ReplaceTrack(localTrack); err != nil {
-			logger.Sugar.Warnf("ReplaceTrack failed for track %s: %v", track.ID(), err)
-			mt.mu.Lock()
-			mt.busy = false
-			mt.mu.Unlock()
-			continue
-		}
-
-		if err := session.Renegotiate(nil); err != nil {
-			logger.Sugar.Warnf("Renegotiate failed for track %s: %v", track.ID(), err)
-		}
-
-		go func() {
-			defer func() {
-				mt.t.Sender().ReplaceTrack(nil)
-				mt.mu.Lock()
-				mt.busy = false
-				mt.mu.Unlock()
-				session.RemoveRemoteTrack(track.ID())
-				logger.Sugar.Debugf("Slot freed for track %s", track.ID())
-			}()
-
-			buf := make([]byte, 1500)
-			for {
-				n, _, err := track.Read(buf)
-				if err != nil {
-					return
-				}
-				localTrack.Write(buf[:n])
-			}
-		}()
-
-		session.SetSubscribedTrack(track.ID(), true)
-		return
+	localTrack, err := webrtc.NewTrackLocalStaticRTP(
+		track.Codec().RTPCodecCapability,
+		track.ID(),
+		track.StreamID(),
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	logger.Sugar.Warnf("No available transceiver slot for session %s to forward track %s (kind=%s)", session.GetClientId(), track.ID(), track.Kind())
+	// create transceiver
+	transceiver, err := pc.AddTransceiverFromTrack(localTrack)
+	if err != nil {
+		return nil, err
+	}
+
+	sender := transceiver.Sender()
+
+	// RTCP handling
+	go func() {
+		rtcpBuf := make([]byte, 1500)
+		for {
+			if _, _, err := sender.Read(rtcpBuf); err != nil {
+				return
+			}
+		}
+	}()
+
+	// RTP forwarding
+	go func() {
+		for {
+			pkt, _, err := track.ReadRTP()
+			if err != nil {
+				return
+			}
+
+			if err := localTrack.WriteRTP(pkt); err != nil {
+				return
+			}
+		}
+	}()
+
+	return transceiver, nil
 }

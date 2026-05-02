@@ -10,6 +10,7 @@ interface TrackMeta {
   kind: string
   clientId: string
   streamGroupId: string
+  transceiverMid: string
 }
 
 interface PendingEntry {
@@ -65,8 +66,8 @@ export class WebRTCService {
     // ── Socket side of rendezvous ──────────────────────────────────
     // Fired by server when a publisher's track is being forwarded to us.
     // May arrive before or after ontrack.
-    this.wsService?.on("new_track", (meta: TrackMeta) => {
-      if (meta.clientId === this.clientId) {
+    this.wsService?.on("new_track", (clientId: string, meta: TrackMeta) => {
+      if (this.clientId === clientId) {
         this.ownTrackIds.add(meta.trackId)
         return
       }
@@ -150,7 +151,6 @@ export class WebRTCService {
       const mid = event.transceiver.mid
 
       if (this.ownTrackIds.has(track.id)) {
-        // This is our own track being looped back by the server; ignore it
         return
       }
 
@@ -178,19 +178,6 @@ export class WebRTCService {
   private tryResolve(trackId: string) {
     const entry = this.pending.get(trackId)
 
-    const pendingArr = Array.from(this.pending.entries())
-    console.log(
-      "Pending that have meta but no track:",
-      pendingArr.filter(([_, e]) => e.meta && !e.track)
-    )
-    console.log(
-      "Pending that have track but no meta:",
-      pendingArr.filter(([_, e]) => e.track && !e.meta)
-    )
-    console.log(
-      "Pending that have both meta and track:",
-      pendingArr.filter(([_, e]) => e.track && e.meta)
-    )
     if (!entry?.meta || !entry?.track) return // wait for the other side
 
     this.pending.delete(trackId)

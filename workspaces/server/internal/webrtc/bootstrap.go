@@ -24,7 +24,7 @@ func WebRTCBootstrap(hub ws.WsHub) {
 	RegisterHandlers(hub)
 }
 
-func MustCreatePeerConnection() (*webrtc.PeerConnection, []*ManagedTransceiver) {
+func MustCreatePeerConnection() *webrtc.PeerConnection {
 	me := &webrtc.MediaEngine{}
 	MustRegisterCodecs(me)
 
@@ -40,19 +40,7 @@ func MustCreatePeerConnection() (*webrtc.PeerConnection, []*ManagedTransceiver) 
 	})
 	Must(err)
 
-	var managed []*ManagedTransceiver
-
-	for i := 0; i < MAXIMUM_TRANCEIVERS; i++ {
-		for _, kind := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeVideo, webrtc.RTPCodecTypeAudio} {
-			t, err := pc.AddTransceiverFromKind(kind, webrtc.RTPTransceiverInit{
-				Direction: webrtc.RTPTransceiverDirectionSendrecv,
-			})
-			Must(err)
-			managed = append(managed, &ManagedTransceiver{t: t, kind: kind})
-		}
-	}
-
-	return pc, managed
+	return pc
 }
 
 func MustRegisterCodecs(me *webrtc.MediaEngine) {
@@ -74,13 +62,12 @@ func MustRegisterCodecs(me *webrtc.MediaEngine) {
 var WSIDtoClientID = make(map[string]string)
 
 func InitPeerConnectionForSession(hub ws.WsHub, conn ws.WebSocketConnection, session Session) {
-	pc, managed := MustCreatePeerConnection()
+	pc := MustCreatePeerConnection()
 	RegisterPeerCallbacks(hub, pc, conn)
 	session.SetEmitFunc(func(event string, data ...any) {
-		combinedData := append([]any{session.GetClientId()}, data...)
-		conn.Emit(event, combinedData...)
+		conn.Emit(event, data...)
 	})
-	session.Init(pc, managed)
+	session.Init(pc)
 }
 
 func HandleDisconnectByWsClient(conn ws.WebSocketConnection) {
@@ -142,12 +129,11 @@ func RegisterPeerCallbacks(hub ws.WsHub, pc *webrtc.PeerConnection, conn ws.WebS
 			return
 		}
 
-		if !Session.IsInitialized() || len(Session.GetTransceivers()) == 0 {
+		if !Session.IsInitialized() {
 			InitPeerConnectionForSession(hub, conn, Session)
 		}
 
 		sessionManager.AddRemoteTrackStream(track.ID(), track)
-		// Session.AddRemoteTrackStream(track.ID(), track)
 		sessionManager.SetOwnerSessionIdForTrack(track.ID(), clientID)
 
 		for _, s := range sessionManager.GetSessions(*groupID) {
@@ -156,9 +142,9 @@ func RegisterPeerCallbacks(hub ws.WsHub, pc *webrtc.PeerConnection, conn ws.WebS
 			}
 
 			s.AddRemoteTrackStream(track.ID(), track)
-			s.SetOwnerSessionIdForTrack(track.ID(), clientID)
-			s.HandleStreamForwarding(track.ID())
+			s.HandleStreamForwarding(track.ID(), clientID)
 		}
+
 	})
 
 	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {

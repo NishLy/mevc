@@ -35,9 +35,7 @@ type SessionTracks struct {
 
 type Session interface {
 	GetPeerConnection() *webrtc.PeerConnection
-	GetTransceivers() []*ManagedTransceiver
 	GetClientId() string
-	AddTransceiver(t *ManagedTransceiver)
 	Close()
 	SetRemoteSet(bool)
 	GetRemoteTracks() []SessionTrack
@@ -47,12 +45,12 @@ type Session interface {
 	AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote)
 	RemoveRemoteTrack(trackId string)
 
-	HandleStreamForwarding(trackID string)
+	HandleStreamForwarding(trackID string, clientID string)
 
 	SetSubscribedTrack(trackId string, subscribed bool)
 	SetOwnerSessionIdForTrack(trackId string, sessionId string)
 
-	Init(pc *webrtc.PeerConnection, transceivers []*ManagedTransceiver)
+	Init(pc *webrtc.PeerConnection)
 
 	RemoveRemoteTrackFromOwner(clientId string)
 
@@ -65,8 +63,8 @@ type Session interface {
 }
 
 type session struct {
-	pc                   *webrtc.PeerConnection
-	transceivers         []*ManagedTransceiver
+	pc *webrtc.PeerConnection
+	// transceivers         []*ManagedTransceiver
 	clientId             string
 	mu                   sync.Mutex
 	remoteSet            bool
@@ -80,8 +78,8 @@ type session struct {
 
 func NewSession(clientID string) Session {
 	return &session{
-		pc:                   nil,
-		transceivers:         nil,
+		pc: nil,
+		// transceivers:         nil,
 		clientId:             clientID,
 		mu:                   sync.Mutex{},
 		remoteSet:            false,
@@ -131,7 +129,7 @@ func (s *session) Renegotiate(attempt *int) error {
 		return err
 	}
 
-	emitFn("new_offer", offer)
+	emitFn("new_offer", s.clientId, offer)
 	return nil
 }
 
@@ -145,9 +143,8 @@ func (s *session) RemoveRemoteTrackFromOwner(clientId string) {
 	}
 }
 
-func (s *session) Init(pc *webrtc.PeerConnection, transceivers []*ManagedTransceiver) {
+func (s *session) Init(pc *webrtc.PeerConnection) {
 	s.pc = pc
-	s.transceivers = transceivers
 	s.initialized = true
 }
 
@@ -169,7 +166,7 @@ func (s *session) SetSubscribedTrack(trackId string, subscribed bool) {
 	}
 }
 
-func (s *session) HandleStreamForwarding(trackID string) {
+func (s *session) HandleStreamForwarding(trackID string, clientID string) {
 	s.mu.Lock()
 	track, exists := s.remoteTracks[trackID]
 	s.mu.Unlock()
@@ -178,17 +175,37 @@ func (s *session) HandleStreamForwarding(trackID string) {
 		return
 	}
 
+	if track.Track == nil || track.Metadata == nil {
+		logger.Sugar.Warnf("Skipping forwarding for track %s in session %s because track or metadata is nil", trackID, s.clientId)
+		return
+	}
+
+	s.SetOwnerSessionIdForTrack(track.Track.ID(), clientID)
 	if track.IsSubscribed {
-		logger.Sugar.Infof("Not forwarding track %s (kind=%s) for session %s because it's not subscribed", trackID, track.Metadata.kind, s.clientId)
+		logger.Sugar.Infof("Not forwarding track %s (kind=%s) for session %s because it's subscribed", trackID, track.Metadata.kind, s.clientId)
 		return
 	}
 
-	if track.Track == nil {
-		logger.Sugar.Warnf("Skipping forwarding for track %s (kind=%s) in session %s because track is nil", trackID, track.Metadata.kind, s.clientId)
+	transceiver, err := forwardTrack(track.Track, s)
+
+	if err != nil {
+		logger.Sugar.Errorf("Error forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
 		return
 	}
 
-	forwardTrack(track.Track, s)
+	s.SetSubscribedTrack(trackID, true)
+	if s.Renegotiate(nil) != nil {
+		logger.Sugar.Errorf("Error renegotiating after forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
+		return
+	}
+
+	s.emitFn("new_track", clientID, map[string]interface{}{
+		"clientId":       clientID,
+		"trackId":        trackID,
+		"kind":           track.Metadata.kind,
+		"streamGroupId":  track.Metadata.streamGroupId,
+		"transceiverMid": transceiver.Mid(),
+	})
 }
 
 func (s *session) GetRemoteTrack(trackId string) (SessionTrack, bool) {
@@ -252,12 +269,6 @@ func (s *session) GetPeerConnection() *webrtc.PeerConnection {
 	return s.pc
 }
 
-func (s *session) GetTransceivers() []*ManagedTransceiver {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.transceivers
-}
-
 func (s *session) SetRemoteSet(remoteSet bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -268,12 +279,6 @@ func (s *session) GetClientId() string {
 	return s.clientId
 }
 
-func (s *session) AddTransceiver(t *ManagedTransceiver) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.transceivers = append(s.transceivers, t)
-}
-
 func (s *session) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -281,7 +286,6 @@ func (s *session) Close() {
 		s.pc.Close()
 		s.pc = nil
 	}
-	s.transceivers = nil
 	s.remoteTracks = make(map[string]SessionTrack)
 	s.closed = true
 }
