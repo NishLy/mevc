@@ -216,6 +216,8 @@ func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) {
 	}
 
 	Must(session.GetPeerConnection().SetRemoteDescription(answer))
+
+	<-session.GetOfferWaitChan()
 }
 
 func HandleLateJoin(conn ws.WebSocketConnection, data ...any) {

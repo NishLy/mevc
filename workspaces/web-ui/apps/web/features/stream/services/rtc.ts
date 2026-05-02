@@ -147,13 +147,12 @@ export class WebRTCService {
     // May arrive before or after new_track socket event.
     this.peerConnection.ontrack = (event: RTCTrackEvent) => {
       const track = event.track
+      const mid = event.transceiver.mid
 
       if (this.ownTrackIds.has(track.id)) {
         // This is our own track being looped back by the server; ignore it
         return
       }
-
-      console.warn("Received track event for track ID:", track.id)
 
       const entry = this.pending.get(track.id) ?? {}
       entry.track = track

@@ -77,7 +77,8 @@ func InitPeerConnectionForSession(hub ws.WsHub, conn ws.WebSocketConnection, ses
 	pc, managed := MustCreatePeerConnection()
 	RegisterPeerCallbacks(hub, pc, conn)
 	session.SetEmitFunc(func(event string, data ...any) {
-		conn.Emit(event, data...)
+		combinedData := append([]any{session.GetClientId()}, data...)
+		conn.Emit(event, combinedData...)
 	})
 	session.Init(pc, managed)
 }
@@ -148,8 +149,6 @@ func RegisterPeerCallbacks(hub ws.WsHub, pc *webrtc.PeerConnection, conn ws.WebS
 		sessionManager.AddRemoteTrackStream(track.ID(), track)
 		// Session.AddRemoteTrackStream(track.ID(), track)
 		sessionManager.SetOwnerSessionIdForTrack(track.ID(), clientID)
-
-		conn.Emit("track_changed", clientID, track.ID(), track.Kind().String())
 
 		for _, s := range sessionManager.GetSessions(*groupID) {
 			if s.GetClientId() == clientID || !s.IsInitialized() {

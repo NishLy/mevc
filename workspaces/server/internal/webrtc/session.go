@@ -59,32 +59,42 @@ type Session interface {
 	IsInitialized() bool
 
 	SetEmitFunc(fn func(event string, data ...any))
-	Renegotiate() error
+	Renegotiate(attempt *int) error
+
+	GetOfferWaitChan() chan bool
 }
 
 type session struct {
-	pc           *webrtc.PeerConnection
-	transceivers []*ManagedTransceiver
-	clientId     string
-	mu           sync.Mutex
-	remoteSet    bool
-	remoteTracks map[string]SessionTrack
-	initialized  bool
-	closed       bool
-	emitFn       func(event string, data ...any)
+	pc                   *webrtc.PeerConnection
+	transceivers         []*ManagedTransceiver
+	clientId             string
+	mu                   sync.Mutex
+	remoteSet            bool
+	remoteTracks         map[string]SessionTrack
+	initialized          bool
+	closed               bool
+	emitFn               func(event string, data ...any)
+	offerWaitChan        chan bool
+	failedRenegotiations []func(attempt int)
 }
 
 func NewSession(clientID string) Session {
 	return &session{
-		pc:           nil,
-		transceivers: nil,
-		clientId:     clientID,
-		mu:           sync.Mutex{},
-		remoteSet:    false,
-		remoteTracks: make(map[string]SessionTrack),
-		initialized:  false,
-		closed:       false,
+		pc:                   nil,
+		transceivers:         nil,
+		clientId:             clientID,
+		mu:                   sync.Mutex{},
+		remoteSet:            false,
+		remoteTracks:         make(map[string]SessionTrack),
+		initialized:          false,
+		closed:               false,
+		offerWaitChan:        make(chan bool, 1),
+		failedRenegotiations: make([]func(attempt int), 0),
 	}
+}
+
+func (s *session) GetOfferWaitChan() chan bool {
+	return s.offerWaitChan
 }
 
 func (s *session) IsInitialized() bool {
@@ -99,7 +109,10 @@ func (s *session) SetEmitFunc(fn func(event string, data ...any)) {
 	s.emitFn = fn
 }
 
-func (s *session) Renegotiate() error {
+func (s *session) Renegotiate(attempt *int) error {
+	// Ensure only one renegotiation happens at a time
+	s.offerWaitChan <- true
+
 	s.mu.Lock()
 	pc := s.pc
 	emitFn := s.emitFn

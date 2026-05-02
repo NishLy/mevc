@@ -41,10 +41,7 @@ func forwardTrack(track *webrtc.TrackRemote, session Session) {
 			continue
 		}
 
-		// Renegotiate so the subscriber browser's ontrack fires with the correct
-		// MSID (containing the publisher's real track ID) instead of the
-		// placeholder ID that was negotiated during the initial offer/answer.
-		if err := session.Renegotiate(); err != nil {
+		if err := session.Renegotiate(nil); err != nil {
 			logger.Sugar.Warnf("Renegotiate failed for track %s: %v", track.ID(), err)
 		}
 
