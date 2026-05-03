@@ -81,7 +81,7 @@ function VideoTile(props: MediaStreamItem) {
     if (videoRef.current && props.stream) {
       videoRef.current.srcObject = props.stream
     }
-  }, [props.stream, props.streamId])
+  }, [props.stream, props.id])
 
   const menuItems = props.isLocal ? LOCAL_MENU : REMOTE_MENU
   const dangerItems = props.isLocal ? [] : REMOTE_MENU_DANGER
@@ -161,7 +161,7 @@ function VideoTile(props: MediaStreamItem) {
         playsInline
         muted={props.isLocal}
         controls={false}
-        poster="https://img.favpng.com/10/24/2/computer-icons-user-icon-design-male-png-favpng-grqs7j1MENUsCah7VD6XBWVst.jpg"
+        // poster="https://img.favpng.com/10/24/2/computer-icons-user-icon-design-male-png-favpng-grqs7j1MENUsCah7VD6XBWVst.jpg"
         className="h-full w-full object-contain"
       />
 

@@ -46,7 +46,7 @@ export default function VideosGrid() {
         )}
       >
         {unpinnedStreams.map((s) => (
-          <VideoTile key={s.streamId} {...s} />
+          <VideoTile key={s.id} {...s} />
         ))}
       </div>
 
@@ -59,7 +59,7 @@ export default function VideosGrid() {
           )}
         >
           {pinnedStreams.map((s) => (
-            <VideoTile key={s.streamId} {...s} />
+            <VideoTile key={s.id} {...s} />
           ))}
         </div>
       )}

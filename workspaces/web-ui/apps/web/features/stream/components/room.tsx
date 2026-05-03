@@ -26,7 +26,7 @@ export default function Room({ roomId }: RoomProps) {
 
   useEffect(() => {
     wsocketService.current = new WSservice({
-      url: "wss://67ea-36-68-55-7.ngrok-free.app/ws?tenant_id=123",
+      url: "wss://36cd-36-68-55-7.ngrok-free.app/ws?tenant_id=123",
       options: {
         autoConnect: true,
         listeners: {

@@ -84,7 +84,7 @@ func InitPeerConnectionForSession(hub ws.WsHub, conn ws.WebSocketConnection, ses
 		session.AddRemoteTrackStream(track.Track.ID(), track.Track)
 		session.AddRemoteTrackMeta(track.Track.ID(), *track.Metadata)
 		session.SetOwnerSessionIdForTrack(track.Track.ID(), track.Metadata.clientId)
-		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId, false)
+		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId, true)
 	}
 
 }
@@ -170,7 +170,7 @@ func RegisterPeerCallbacks(hub ws.WsHub, pc *webrtc.PeerConnection, conn ws.WebS
 	})
 
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		logger.Sugar.Infof("Peer Connection state: %s", state)
+		logger.Sugar.Infof("Peer Connection state closed: %s", state)
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
 			clientID, _ := WSIDtoClientID[conn.ID()]
 			HandleDisconnectByWsClient(conn)

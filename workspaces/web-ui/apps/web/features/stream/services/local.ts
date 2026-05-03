@@ -8,7 +8,7 @@ import {
 const LOCAL_STREAM_CONSTANT = "local_stream"
 const LOCAL_SCREEN_SHARE_STREAM_CONSTRAINT = "local_screen_share_stream"
 
-function createBlackVideoTrack(width = 640, height = 480) {
+export function createBlackVideoTrack(width = 640, height = 480) {
   const canvas = Object.assign(document.createElement("canvas"), {
     width,
     height,

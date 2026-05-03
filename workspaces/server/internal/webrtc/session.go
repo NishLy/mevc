@@ -216,14 +216,11 @@ func (s *session) HandleStreamForwarding(trackID string, clientID string, should
 		return
 	}
 
-	transceiver, err := forwardTrack(track.Track, s)
-
+	transceiver, localTrack, err := createLocalTrancieverAndTrack(track.Track, s)
 	if err != nil {
-		logger.Sugar.Errorf("Error forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
+		logger.Sugar.Errorf("Error creating local track for forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
 		return
 	}
-
-	s.SetSubscribedTrack(trackID, true)
 
 	if shouldRenegotiate {
 		if s.Renegotiate(nil) != nil {
@@ -232,15 +229,23 @@ func (s *session) HandleStreamForwarding(trackID string, clientID string, should
 		}
 	}
 
-	if transceiver.Mid() != "" {
-		s.emitFn("new_track", clientID, map[string]interface{}{
-			"clientId":       clientID,
-			"trackId":        trackID,
-			"kind":           track.Metadata.kind,
-			"streamGroupId":  track.Metadata.streamGroupId,
-			"transceiverMid": transceiver.Mid(),
-		})
+	s.SetSubscribedTrack(trackID, true)
+
+	err = forwardTrack(s.pc, transceiver, track.Track, localTrack)
+	if err != nil {
+		logger.Sugar.Errorf("Error forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
+		return
 	}
+
+	// if transceiver.Mid() != "" {
+	// 	s.emitFn("new_track", clientID, map[string]interface{}{
+	// 		"clientId":       clientID,
+	// 		"trackId":        trackID,
+	// 		"kind":           track.Metadata.kind,
+	// 		"streamGroupId":  track.Metadata.streamGroupId,
+	// 		"transceiverMid": transceiver.Mid(),
+	// 	})
+	// }
 }
 
 func (s *session) GetRemoteTrack(trackId string) (SessionTrack, bool) {

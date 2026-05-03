@@ -1,5 +1,6 @@
 import WSservice from "@/lib/ws"
 import { MediaStreamItem } from "../types/service"
+import { createBlackVideoTrack } from "./local"
 
 interface WebRTCServiceProps {
   onAddedRemoteStream: (stream: MediaStreamItem) => void
@@ -231,8 +232,8 @@ export class WebRTCService {
     this.attachOrUpdate(streamGroupId)
   }
 
+  private intervalId: NodeJS.Timeout | null = null
   private attachOrUpdate(streamGroupId: string) {
-    console.log("Attaching/updating stream for group ID:", streamGroupId)
     const resolved = this.resolvedStreams.get(streamGroupId)!
     const videoTrack = resolved.tracks.get("video")
     const audioTrack = resolved.tracks.get("audio")
@@ -241,12 +242,46 @@ export class WebRTCService {
     if (videoTrack) ms.addTrack(videoTrack)
     if (audioTrack) ms.addTrack(audioTrack)
 
+    if (!videoTrack) {
+      const blackTrack = createBlackVideoTrack()
+      if (blackTrack) {
+        ms.addTrack(blackTrack)
+      }
+    }
+
     this.options.onAddedRemoteStream({
       id: streamGroupId,
       stream: ms,
       type: "camera",
       isLocal: false,
     })
+
+    const pc = this.peerConnection
+    if (!pc) return
+
+    if (this.intervalId) {
+      clearInterval(this.intervalId)
+    }
+
+    pc.getReceivers().forEach((r) => {
+      console.log(r.track?.kind, r.getParameters().codecs)
+    })
+
+    this.intervalId = setInterval(async () => {
+      const stats = await pc.getStats()
+
+      stats.forEach((report) => {
+        if (report.type === "inbound-rtp" && report.kind === "video") {
+          const codec = stats.get(report.codecId)
+
+          console.log("Codec:", codec?.mimeType)
+          console.log("PayloadType:", codec?.payloadType)
+
+          console.log("bytesReceived:", report.bytesReceived)
+          console.log("framesDecoded:", report.framesDecoded)
+        }
+      })
+    }, 1000)
   }
 
   async setLocalStreams(newStreams: MediaStreamItem[]) {

@@ -1,10 +1,13 @@
 package rtc
 
 import (
+	"time"
+
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 )
 
-func forwardTrack(track *webrtc.TrackRemote, session Session) (*webrtc.RTPTransceiver, error) {
+func createLocalTrancieverAndTrack(track *webrtc.TrackRemote, session Session) (*webrtc.RTPTransceiver, *webrtc.TrackLocalStaticRTP, error) {
 	pc := session.GetPeerConnection()
 
 	localTrack, err := webrtc.NewTrackLocalStaticRTP(
@@ -13,18 +16,46 @@ func forwardTrack(track *webrtc.TrackRemote, session Session) (*webrtc.RTPTransc
 		track.StreamID(),
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// create transceiver
 	transceiver, err := pc.AddTransceiverFromTrack(localTrack)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	return transceiver, localTrack, nil
+}
+
+func forwardTrack(pc *webrtc.PeerConnection, transceiver *webrtc.RTPTransceiver, track *webrtc.TrackRemote, localTrack *webrtc.TrackLocalStaticRTP) error {
+	go func() {
+		pli := []rtcp.Packet{
+			&rtcp.PictureLossIndication{
+				MediaSSRC: uint32(track.SSRC()),
+			},
+		}
+
+		for {
+			if err := pc.WriteRTCP(pli); err != nil {
+				return
+			}
+			time.Sleep(2 * time.Second)
+		}
+	}()
 
 	sender := transceiver.Sender()
 
-	// RTCP handling
+	params := sender.GetParameters()
+
+	var targetPT uint8
+	for _, codec := range params.Codecs {
+		if codec.MimeType == track.Codec().MimeType {
+			targetPT = uint8(codec.PayloadType)
+			break
+		}
+	}
+
+	// RTCP reader
 	go func() {
 		rtcpBuf := make([]byte, 1500)
 		for {
@@ -34,7 +65,7 @@ func forwardTrack(track *webrtc.TrackRemote, session Session) (*webrtc.RTPTransc
 		}
 	}()
 
-	// RTP forwarding
+	// RTP forward (FIXED)
 	go func() {
 		for {
 			pkt, _, err := track.ReadRTP()
@@ -42,11 +73,14 @@ func forwardTrack(track *webrtc.TrackRemote, session Session) (*webrtc.RTPTransc
 				return
 			}
 
+			// 🔥 FORCE MATCH HERE
+			pkt.PayloadType = targetPT
+
 			if err := localTrack.WriteRTP(pkt); err != nil {
 				return
 			}
 		}
 	}()
 
-	return transceiver, nil
+	return nil
 }
