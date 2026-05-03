@@ -67,6 +67,14 @@ export class WebRTCService {
     // Fired by server when a publisher's track is being forwarded to us.
     // May arrive before or after ontrack.
     this.wsService?.on("new_track", (clientId: string, meta: TrackMeta) => {
+      console.warn(
+        "Received new_track event for track ID:",
+        meta.trackId,
+        "from client:",
+        clientId,
+        "with MID:",
+        meta.transceiverMid
+      )
       if (this.clientId === clientId) {
         this.ownTrackIds.add(meta.trackId)
         return
@@ -149,6 +157,7 @@ export class WebRTCService {
     this.peerConnection.ontrack = (event: RTCTrackEvent) => {
       const track = event.track
       const mid = event.transceiver.mid
+      console.warn("Received track with MID:", mid, "and ID:", track.id)
 
       if (this.ownTrackIds.has(track.id)) {
         return

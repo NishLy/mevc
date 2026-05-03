@@ -45,7 +45,8 @@ func HandleOffer(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
-	if _, exists := GlobalSessionManager[*groupID]; !exists {
+	sessionManager, exists := GlobalSessionManager[*groupID]
+	if !exists {
 		return
 	}
 
@@ -54,7 +55,7 @@ func HandleOffer(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
-	session, exists := GlobalSessionManager[*groupID].GetSession(clientID)
+	session, exists := sessionManager.GetSession(clientID)
 
 	if !exists {
 		return
@@ -63,7 +64,7 @@ func HandleOffer(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	WSIDtoClientID[conn.ID()] = clientID
 
 	if !session.IsInitialized() {
-		InitPeerConnectionForSession(hub, conn, session)
+		InitPeerConnectionForSession(hub, conn, session, sessionManager)
 	}
 
 	pc := session.GetPeerConnection()
@@ -132,7 +133,7 @@ func HandleIceCandidate(conn ws.WebSocketConnection, data ...any) {
 	Must(session.GetPeerConnection().AddICECandidate(candidate))
 }
 
-func handleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
+func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 	groupID := conn.GetGroupId()
 
 	if groupID == nil {
@@ -176,7 +177,7 @@ func handleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) 
 		}
 
 		s.AddRemoteTrackMeta(trackId, metadata)
-		s.HandleStreamForwarding(trackId, metadata.clientId)
+		s.HandleStreamForwarding(trackId, metadata.clientId, true)
 	}
 }
 
@@ -222,44 +223,44 @@ func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) {
 	<-session.GetOfferWaitChan()
 }
 
-func HandleLateJoin(conn ws.WebSocketConnection, data ...any) {
-	groupID := conn.GetGroupId()
-	clientId := data[0].(string)
+// func HandleLateJoin(conn ws.WebSocketConnection, data ...any) {
+// 	groupID := conn.GetGroupId()
+// 	clientId := data[0].(string)
 
-	if groupID == nil || clientId == "" {
-		logger.Sugar.Warnf("Invalid late join data: groupID=%v, clientId=%s", groupID, clientId)
-		return
-	}
+// 	if groupID == nil || clientId == "" {
+// 		logger.Sugar.Warnf("Invalid late join data: groupID=%v, clientId=%s", groupID, clientId)
+// 		return
+// 	}
 
-	if _, exists := GlobalSessionManager[*groupID]; !exists {
-		logger.Sugar.Warnf("No session manager found for group %s when handling late join", *groupID)
-		return
-	}
+// 	if _, exists := GlobalSessionManager[*groupID]; !exists {
+// 		logger.Sugar.Warnf("No session manager found for group %s when handling late join", *groupID)
+// 		return
+// 	}
 
-	sessionManager, exists := GlobalSessionManager[*groupID]
-	if !exists {
-		logger.Sugar.Warnf("No session manager found for group %s when handling late join", *groupID)
-		return
-	}
+// 	sessionManager, exists := GlobalSessionManager[*groupID]
+// 	if !exists {
+// 		logger.Sugar.Warnf("No session manager found for group %s when handling late join", *groupID)
+// 		return
+// 	}
 
-	session, exists := sessionManager.GetSession(clientId)
-	if !exists || session == nil {
-		logger.Sugar.Warnf("No session found for client %s in group %s when handling late join", clientId, *groupID)
-		return
-	}
+// 	session, exists := sessionManager.GetSession(clientId)
+// 	if !exists || session == nil {
+// 		logger.Sugar.Warnf("No session found for client %s in group %s when handling late join", clientId, *groupID)
+// 		return
+// 	}
 
-	for _, track := range sessionManager.GetSubscribedTracks() {
-		if track.Metadata == nil || track.Track == nil {
-			continue
-		}
+// 	for _, track := range sessionManager.GetSubscribedTracks() {
+// 		if track.Metadata == nil || track.Track == nil {
+// 			continue
+// 		}
 
-		if track.Metadata.clientId == clientId {
-			continue
-		}
+// 		if track.Metadata.clientId == clientId {
+// 			continue
+// 		}
 
-		session.AddRemoteTrackMeta(track.Metadata.trackId, *track.Metadata)
-		session.AddRemoteTrackStream(track.Metadata.trackId, track.Track)
-		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId)
-	}
+// 		session.AddRemoteTrackMeta(track.Metadata.trackId, *track.Metadata)
+// 		session.AddRemoteTrackStream(track.Metadata.trackId, track.Track)
+// 		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId)
+// 	}
 
-}
+// }

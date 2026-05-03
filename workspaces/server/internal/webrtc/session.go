@@ -45,7 +45,7 @@ type Session interface {
 	AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote)
 	RemoveRemoteTrack(trackId string)
 
-	HandleStreamForwarding(trackID string, clientID string)
+	HandleStreamForwarding(trackID string, clientID string, shouldRenegotiate bool)
 
 	SetSubscribedTrack(trackId string, subscribed bool)
 	SetOwnerSessionIdForTrack(trackId string, sessionId string)
@@ -166,7 +166,7 @@ func (s *session) SetSubscribedTrack(trackId string, subscribed bool) {
 	}
 }
 
-func (s *session) HandleStreamForwarding(trackID string, clientID string) {
+func (s *session) HandleStreamForwarding(trackID string, clientID string, shouldRenegotiate bool) {
 	s.mu.Lock()
 	track, exists := s.remoteTracks[trackID]
 	s.mu.Unlock()
@@ -194,9 +194,12 @@ func (s *session) HandleStreamForwarding(trackID string, clientID string) {
 	}
 
 	s.SetSubscribedTrack(trackID, true)
-	if s.Renegotiate(nil) != nil {
-		logger.Sugar.Errorf("Error renegotiating after forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
-		return
+
+	if shouldRenegotiate {
+		if s.Renegotiate(nil) != nil {
+			logger.Sugar.Errorf("Error renegotiating after forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
+			return
+		}
 	}
 
 	s.emitFn("new_track", clientID, map[string]interface{}{

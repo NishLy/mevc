@@ -8,7 +8,7 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-var MAXIMUM_TRANCEIVERS = 10
+var MAXIMUM_CONNECTION = 20
 
 var (
 	GlobalSessionManager = make(map[string]SessionManager)
@@ -61,13 +61,32 @@ func MustRegisterCodecs(me *webrtc.MediaEngine) {
 
 var WSIDtoClientID = make(map[string]string)
 
-func InitPeerConnectionForSession(hub ws.WsHub, conn ws.WebSocketConnection, session Session) {
+func InitPeerConnectionForSession(hub ws.WsHub, conn ws.WebSocketConnection, session Session, sesssessionManager SessionManager) {
 	pc := MustCreatePeerConnection()
 	RegisterPeerCallbacks(hub, pc, conn)
+
 	session.SetEmitFunc(func(event string, data ...any) {
 		conn.Emit(event, data...)
 	})
+
 	session.Init(pc)
+
+	// register tracks for existing streams in the session
+	for _, track := range sesssessionManager.GetSubscribedTracks() {
+		if track.Metadata == nil || track.Track == nil {
+			continue
+		}
+
+		if track.Metadata.clientId == session.GetClientId() {
+			continue
+		}
+
+		session.AddRemoteTrackStream(track.Track.ID(), track.Track)
+		session.AddRemoteTrackMeta(track.Track.ID(), *track.Metadata)
+		session.SetOwnerSessionIdForTrack(track.Track.ID(), track.Metadata.clientId)
+		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId, false)
+	}
+
 }
 
 func HandleDisconnectByWsClient(conn ws.WebSocketConnection) {
@@ -130,7 +149,7 @@ func RegisterPeerCallbacks(hub ws.WsHub, pc *webrtc.PeerConnection, conn ws.WebS
 		}
 
 		if !Session.IsInitialized() {
-			InitPeerConnectionForSession(hub, conn, Session)
+			InitPeerConnectionForSession(hub, conn, Session, sessionManager)
 		}
 
 		sessionManager.AddRemoteTrackStream(track.ID(), track)
@@ -142,7 +161,7 @@ func RegisterPeerCallbacks(hub ws.WsHub, pc *webrtc.PeerConnection, conn ws.WebS
 			}
 
 			s.AddRemoteTrackStream(track.ID(), track)
-			s.HandleStreamForwarding(track.ID(), clientID)
+			s.HandleStreamForwarding(track.ID(), clientID, true)
 		}
 
 	})
@@ -198,9 +217,9 @@ func RegisterHandlers(hub ws.WsHub) {
 	})
 	hub.On("ice_candidate", HandleIceCandidate)
 	hub.On("track_changed", func(conn ws.WebSocketConnection, data ...any) {
-		handleTrackChanged(hub, conn, data...)
+		handleTrackChanged(conn, data...)
 	})
-	hub.On("ice_connected", HandleLateJoin)
+	// hub.On("ice_connected", HandleLateJoin)
 	hub.On("disconnect", func(conn ws.WebSocketConnection, data ...any) {
 		HandleDisconnectByWsClient(conn)
 	})
