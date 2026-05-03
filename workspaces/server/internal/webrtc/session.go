@@ -54,6 +54,8 @@ type Session interface {
 
 	RemoveRemoteTrackFromOwner(clientId string)
 
+	removeTrackFromPeerConnectionBatch(clientId string, tracks []SessionTrack)
+
 	IsInitialized() bool
 
 	SetEmitFunc(fn func(event string, data ...any))
@@ -111,10 +113,8 @@ func (s *session) Renegotiate(attempt *int) error {
 	// Ensure only one renegotiation happens at a time
 	s.offerWaitChan <- true
 
-	s.mu.Lock()
 	pc := s.pc
 	emitFn := s.emitFn
-	s.mu.Unlock()
 
 	if pc == nil || emitFn == nil {
 		return nil
@@ -133,13 +133,43 @@ func (s *session) Renegotiate(attempt *int) error {
 	return nil
 }
 
+func (s *session) removeTrackFromPeerConnectionBatch(clientId string, tracks []SessionTrack) {
+	for _, track := range tracks {
+		for _, transceiver := range s.pc.GetTransceivers() {
+			if transceiver.Sender() != nil && transceiver.Sender().Track() != nil && transceiver.Sender().Track().ID() == track.Track.ID() {
+				s.pc.RemoveTrack(transceiver.Sender())
+			}
+		}
+	}
+}
+
 func (s *session) RemoveRemoteTrackFromOwner(clientId string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	var tracksToRemove []SessionTrack
 	for trackId, track := range s.remoteTracks {
 		if track.OwnerSessionId == clientId {
 			delete(s.remoteTracks, trackId)
+			if track.Track != nil {
+				tracksToRemove = append(tracksToRemove, track)
+			}
 		}
+	}
+
+	if len(tracksToRemove) > 0 {
+		s.removeTrackFromPeerConnectionBatch(clientId, tracksToRemove)
+		sessionTracksMetadata := make([]*SessionTrackMetadata, 0, len(tracksToRemove))
+
+		for _, track := range tracksToRemove {
+			sessionTracksMetadata = append(sessionTracksMetadata, track.Metadata)
+		}
+
+		if err := s.Renegotiate(nil); err != nil {
+			logger.Sugar.Errorf("Error renegotiating after removing tracks for session %s: %v", s.clientId, err)
+		}
+
+		s.emitFn("disconnect_remote_stream", clientId, sessionTracksMetadata)
 	}
 }
 

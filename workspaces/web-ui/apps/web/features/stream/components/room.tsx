@@ -79,6 +79,12 @@ export default function Room({ roomId }: RoomProps) {
           ]
           useMeet.setState({ remoteStreams: newRemoteStreams })
         },
+        onRemovedRemoteStream: (streamGroupId) => {
+          const newRemoteStreams = useMeet
+            .getState()
+            .remoteStreams.filter((s) => s.id !== streamGroupId)
+          useMeet.setState({ remoteStreams: newRemoteStreams })
+        },
       }
     )
 

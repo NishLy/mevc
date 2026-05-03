@@ -90,7 +90,6 @@ func InitPeerConnectionForSession(hub ws.WsHub, conn ws.WebSocketConnection, ses
 }
 
 func HandleDisconnectByWsClient(conn ws.WebSocketConnection) {
-
 	groupID := conn.GetGroupId()
 	sessionManager, exists := GlobalSessionManager[*groupID]
 
@@ -220,9 +219,9 @@ func RegisterHandlers(hub ws.WsHub) {
 		handleTrackChanged(conn, data...)
 	})
 	// hub.On("ice_connected", HandleLateJoin)
-	hub.On("disconnect", func(conn ws.WebSocketConnection, data ...any) {
-		HandleDisconnectByWsClient(conn)
-	})
+	// hub.On("disconnect", func(conn ws.WebSocketConnection, data ...any) {
+	// 	HandleDisconnectByWsClient(conn)
+	// })
 	hub.On("leave_room", func(conn ws.WebSocketConnection, data ...any) {
 		HandleLeaveRoom(hub, conn, data...)
 	})

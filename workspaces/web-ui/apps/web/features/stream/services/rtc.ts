@@ -3,6 +3,7 @@ import { MediaStreamItem } from "../types/service"
 
 interface WebRTCServiceProps {
   onAddedRemoteStream: (stream: MediaStreamItem) => void
+  onRemovedRemoteStream?: (streamId: string) => void
 }
 
 interface TrackMeta {
@@ -41,6 +42,7 @@ export class WebRTCService {
 
   private options: WebRTCServiceProps = {
     onAddedRemoteStream: () => {},
+    onRemovedRemoteStream: () => {},
   }
 
   constructor(
@@ -67,15 +69,6 @@ export class WebRTCService {
     // Fired by server when a publisher's track is being forwarded to us.
     // May arrive before or after ontrack.
     this.wsService?.on("new_track", (clientId: string, meta: TrackMeta) => {
-      console.warn(
-        "Received new_track event for track ID:",
-        meta.trackId,
-        "from client:",
-        clientId,
-        "with MID:",
-        meta.transceiverMid
-      )
-
       if (this.clientId === clientId) {
         this.ownTrackIds.add(meta.trackId)
         return
@@ -97,6 +90,27 @@ export class WebRTCService {
 
       this.tryResolve(mid)
     })
+
+    this.wsService?.on(
+      "disconnect_remote_stream",
+      (clientId: string, trackMetas: TrackMeta[]) => {
+        const clientsStreamsGroupId = Array.from(this.resolvedStreams.entries())
+          .filter(([_, value]) => value.clientId === clientId)
+          .map(([key]) => key)
+
+        console.log(
+          "Disconnecting remote stream for client:",
+          clientId,
+          "stream group IDs:",
+          clientsStreamsGroupId
+        )
+
+        for (const streamGroupId of clientsStreamsGroupId) {
+          this.resolvedStreams.delete(streamGroupId)
+          this.options.onRemovedRemoteStream?.(streamGroupId)
+        }
+      }
+    )
 
     // Server-driven renegotiation: after forwardTrack → ReplaceTrack the server
     // sends a new offer whose MSID contains the publisher's real track ID.
@@ -175,8 +189,6 @@ export class WebRTCService {
         return
       }
 
-      console.warn("Received track with MID:", mid, "and ID:", track.id)
-
       if (!this.pending.has(mid)) {
         this.emit("request_track_meta", {
           trackId: track.id,
@@ -233,11 +245,10 @@ export class WebRTCService {
     const videoTrack = resolved.tracks.get("video")
     const audioTrack = resolved.tracks.get("audio")
 
-    // Attach as soon as we have video; update again if audio arrives later
     if (!videoTrack) return
 
     const ms = new MediaStream()
-    ms.addTrack(videoTrack)
+    if (videoTrack) ms.addTrack(videoTrack)
     if (audioTrack) ms.addTrack(audioTrack)
 
     this.options.onAddedRemoteStream({
