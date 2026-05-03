@@ -62,6 +62,8 @@ type Session interface {
 	GetOfferWaitChan() chan bool
 
 	GetQueueTrackForwarding() chan func()
+
+	RunWorker()
 }
 
 type WaitTrackResult struct {
@@ -95,7 +97,7 @@ func NewSession(clientID string, pc *webrtc.PeerConnection) Session {
 		initialized:          true,
 		closed:               false,
 		offerWaitChan:        make(chan bool, 1),
-		queueTrackForwarding: make(chan func()),
+		queueTrackForwarding: make(chan func(), 100),
 		failedRenegotiations: make([]func(attempt int), 0),
 	}
 }
@@ -256,6 +258,21 @@ func (s *session) HandleStreamForwarding(trackID string, clientID string) {
 
 }
 
+func (s *session) RunWorker() {
+	go func() {
+		// Use a recover block to prevent the worker from dying if one track fails
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Sugar.Errorf("Recovered from worker panic: %v", r)
+			}
+		}()
+
+		for pending := range s.queueTrackForwarding {
+			pending() // Execute the task
+		}
+	}()
+}
+
 func (s *session) GetRemoteTrack(trackId string) (SessionTrack, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -328,9 +345,6 @@ func (s *session) GetClientId() string {
 }
 
 func (s *session) Close() {
-	s.mu.Lock()
-
-	defer s.mu.Unlock()
 	if s.pc != nil {
 		s.pc.Close()
 		s.pc = nil
@@ -341,6 +355,7 @@ func (s *session) Close() {
 	}
 
 	s.remoteTracks = make(map[string]SessionTrack)
+	s.queueTrackForwarding = make(chan func(), 100)
 	s.closed = true
 }
 

@@ -6,6 +6,20 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+func HandleDisconnect(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
+	sessionManager := GetGroupManagerFromConn(conn)
+	if sessionManager == nil {
+		return
+	}
+
+	session, exists := sessionManager.GetSessionByWsID(conn.ID())
+	if !exists {
+		return
+	}
+
+	go RemoveFromSessionManager(hub, sessionManager, session.GetClientId())
+}
+
 func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	clientID, ok := data[0].(string)
 
@@ -27,8 +41,13 @@ func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	pc := MustCreatePeerConnection()
 
 	session := NewSession(clientID, pc)
+
+	session.SetEmitFunc(func(event string, args ...any) {
+		conn.Emit(event, args...)
+	})
+
 	BoostrapSession(sessionManager, session)
-	RegisterPCCallbacks(sessionManager, session, conn)
+	RegisterPCCallbacks(hub, sessionManager, session, conn)
 
 	sessionManager.AddSession(session, conn.ID())
 
@@ -52,7 +71,7 @@ func HandleLeaveRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
-	RemoveFromSessionManager(sessionManager, session.GetClientId())
+	RemoveFromSessionManager(hub, sessionManager, session.GetClientId())
 }
 
 func HandleOffer(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {

@@ -92,7 +92,7 @@ export class WebRTCService {
       this.tryResolve(mid)
     })
 
-    this.wsService?.on("disconnect_remote_stream", (clientId: string) => {
+    this.wsService?.on("peer_left", (clientId: string) => {
       console.log("Disconnecting streams for client:", clientId)
       const clientsStreamsGroupId = Array.from(this.resolvedStreams.entries())
         .filter(([_, value]) => value.clientId === clientId)

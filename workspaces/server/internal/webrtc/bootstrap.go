@@ -72,7 +72,7 @@ func MustCreatePeerConnection() *webrtc.PeerConnection {
 	return pc
 }
 
-func RegisterPCCallbacks(sessionManager SessionManager, session Session, conn ws.WebSocketConnection) {
+func RegisterPCCallbacks(hub ws.WsHub, sessionManager SessionManager, session Session, conn ws.WebSocketConnection) {
 	session.GetPeerConnection().OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		sessionManager.AddRemoteTrackStream(track.ID(), track)
 		sessionManager.SetOwnerSessionIdForTrack(track.ID(), session.GetClientId())
@@ -102,13 +102,11 @@ func RegisterPCCallbacks(sessionManager SessionManager, session Session, conn ws
 	session.GetPeerConnection().OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		logger.Sugar.Infof("Peer Connection state: %s", state)
 		if state == webrtc.PeerConnectionStateConnected {
-			for pending := range session.GetQueueTrackForwarding() {
-				pending()
-			}
+			session.RunWorker()
 		}
 
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
-			RemoveFromSessionManager(sessionManager, session.GetClientId())
+			go RemoveFromSessionManager(hub, sessionManager, session.GetClientId())
 
 			if session.GetClientId() != "" {
 				conn.Emit("peer_connection_closed", session.GetClientId(), "Peer connection closed due to failure or closure")
@@ -117,7 +115,7 @@ func RegisterPCCallbacks(sessionManager SessionManager, session Session, conn ws
 	})
 }
 
-func RemoveFromSessionManager(sessionManager SessionManager, clientID string) {
+func RemoveFromSessionManager(hub ws.WsHub, sessionManager SessionManager, clientID string) {
 	session, exists := sessionManager.GetSession(clientID)
 	if !exists || session == nil {
 		return
@@ -135,6 +133,8 @@ func RemoveFromSessionManager(sessionManager SessionManager, clientID string) {
 	if len(sessionManager.GetSessions()) == 0 {
 		delete(GlobalSessionManager, sessionManager.GetGroupId())
 	}
+
+	hub.EmitTo(sessionManager.GetGroupId(), "peer_left", nil, clientID)
 }
 
 func BoostrapSession(sessionManager SessionManager, session Session) {
@@ -173,4 +173,7 @@ func RegisterHandlers(hub ws.WsHub) {
 		HandleJoinRoom(hub, conn, data...)
 	})
 	hub.On("request_track_meta", HandleRequestMeta)
+	hub.On("disconnect", func(conn ws.WebSocketConnection, data ...any) {
+		HandleDisconnect(hub, conn, data...)
+	})
 }
