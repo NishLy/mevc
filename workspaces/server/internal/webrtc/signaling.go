@@ -264,3 +264,58 @@ func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) {
 // 	}
 
 // }
+
+func HandleRequestMeta(conn ws.WebSocketConnection, data ...any) {
+	groupID := conn.GetGroupId()
+	clientId := data[0].(string)
+	metaMap := data[1].(map[string]interface{})
+
+	if metaMap["transceiverMid"] == nil {
+		logger.Sugar.Warnf("Invalid track metadata from client %s: %v", clientId, metaMap)
+		return
+	}
+
+	if groupID == nil || clientId == "" {
+		logger.Sugar.Warnf("Invalid late join data: groupID=%v, clientId=%s", groupID, clientId)
+		return
+	}
+
+	if _, exists := GlobalSessionManager[*groupID]; !exists {
+		logger.Sugar.Warnf("No session manager found for group %s when handling late join", *groupID)
+		return
+	}
+
+	sessionManager, exists := GlobalSessionManager[*groupID]
+	if !exists {
+		logger.Sugar.Warnf("No session manager found for group %s when handling late join", *groupID)
+		return
+	}
+
+	session, exists := sessionManager.GetSession(clientId)
+	if !exists || session == nil {
+		logger.Sugar.Warnf("No session found for client %s in group %s when handling late join", clientId, *groupID)
+		return
+	}
+
+	pc := session.GetPeerConnection()
+
+	for _, track := range pc.GetTransceivers() {
+		if track.Mid() == metaMap["transceiverMid"].(string) {
+			sessionTrack, exist := session.GetRemoteTrack(track.Sender().Track().ID())
+
+			if !exist {
+				logger.Sugar.Warnf("No track found for MID %s in session of client %s", track.Mid(), clientId)
+				return
+			}
+
+			conn.Emit("new_track", sessionTrack.Metadata.clientId, map[string]interface{}{
+				"clientId":       sessionTrack.Metadata.clientId,
+				"trackId":        sessionTrack.Metadata.trackId,
+				"kind":           sessionTrack.Metadata.kind,
+				"streamGroupId":  sessionTrack.Metadata.streamGroupId,
+				"transceiverMid": track.Mid(),
+			})
+		}
+	}
+
+}

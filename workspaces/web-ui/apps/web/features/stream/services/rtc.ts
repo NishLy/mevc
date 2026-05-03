@@ -75,19 +75,27 @@ export class WebRTCService {
         "with MID:",
         meta.transceiverMid
       )
+
       if (this.clientId === clientId) {
         this.ownTrackIds.add(meta.trackId)
         return
       }
 
-      const entry = this.pending.get(meta.trackId) ?? {}
-      entry.meta = meta
-      this.pending.set(meta.trackId, entry)
+      const mid = meta.transceiverMid
 
-      // No addTransceiver here — server pre-created sendrecv slots are already
-      // in SDP. A server-driven renegotiation (new_offer) will update the MSID
-      // so ontrack fires with the correct publisher track ID.
-      this.tryResolve(meta.trackId)
+      if (!mid) {
+        console.warn(
+          "Received new_track event without MID, cannot correlate:",
+          meta.trackId
+        )
+        return
+      }
+
+      const entry = this.pending.get(mid) ?? {}
+      entry.meta = meta
+      this.pending.set(mid, entry)
+
+      this.tryResolve(mid)
     })
 
     // Server-driven renegotiation: after forwardTrack → ReplaceTrack the server
@@ -157,17 +165,30 @@ export class WebRTCService {
     this.peerConnection.ontrack = (event: RTCTrackEvent) => {
       const track = event.track
       const mid = event.transceiver.mid
-      console.warn("Received track with MID:", mid, "and ID:", track.id)
 
       if (this.ownTrackIds.has(track.id)) {
         return
       }
 
-      const entry = this.pending.get(track.id) ?? {}
-      entry.track = track
-      this.pending.set(track.id, entry)
+      if (!mid) {
+        console.warn("Received track without MID, cannot correlate:", track.id)
+        return
+      }
 
-      this.tryResolve(track.id)
+      console.warn("Received track with MID:", mid, "and ID:", track.id)
+
+      if (!this.pending.has(mid)) {
+        this.emit("request_track_meta", {
+          trackId: track.id,
+          transceiverMid: mid,
+        })
+      }
+
+      const entry = this.pending.get(mid) ?? {}
+      entry.track = track
+      this.pending.set(mid, entry)
+
+      this.tryResolve(mid)
     }
 
     this.peerConnection.onicecandidate = (event) => {

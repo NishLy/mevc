@@ -202,13 +202,15 @@ func (s *session) HandleStreamForwarding(trackID string, clientID string, should
 		}
 	}
 
-	s.emitFn("new_track", clientID, map[string]interface{}{
-		"clientId":       clientID,
-		"trackId":        trackID,
-		"kind":           track.Metadata.kind,
-		"streamGroupId":  track.Metadata.streamGroupId,
-		"transceiverMid": transceiver.Mid(),
-	})
+	if transceiver.Mid() != "" {
+		s.emitFn("new_track", clientID, map[string]interface{}{
+			"clientId":       clientID,
+			"trackId":        trackID,
+			"kind":           track.Metadata.kind,
+			"streamGroupId":  track.Metadata.streamGroupId,
+			"transceiverMid": transceiver.Mid(),
+		})
+	}
 }
 
 func (s *session) GetRemoteTrack(trackId string) (SessionTrack, bool) {

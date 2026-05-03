@@ -229,4 +229,5 @@ func RegisterHandlers(hub ws.WsHub) {
 	hub.On("join_room", func(conn ws.WebSocketConnection, data ...any) {
 		HandleJoinRoom(hub, conn, data...)
 	})
+	hub.On("request_track_meta", HandleRequestMeta)
 }
