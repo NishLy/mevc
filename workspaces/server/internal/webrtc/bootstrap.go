@@ -20,8 +20,37 @@ func Must(err error) {
 	}
 }
 
+func GetGroupManagerFromConn(conn ws.WebSocketConnection) SessionManager {
+	groupId := conn.GetGroupId()
+	if groupId == nil {
+		return nil
+	}
+
+	if _, exists := GlobalSessionManager[*groupId]; !exists {
+		return nil
+	}
+
+	return GlobalSessionManager[*groupId]
+}
+
 func WebRTCBootstrap(hub ws.WsHub) {
 	RegisterHandlers(hub)
+}
+
+func MustRegisterCodecs(me *webrtc.MediaEngine) {
+	codecs := []struct {
+		mime      string
+		clockRate uint32
+		kind      webrtc.RTPCodecType
+	}{
+		{webrtc.MimeTypeVP8, 90000, webrtc.RTPCodecTypeVideo},
+		{webrtc.MimeTypeOpus, 48000, webrtc.RTPCodecTypeAudio},
+	}
+	for _, c := range codecs {
+		Must(me.RegisterCodec(webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: c.mime, ClockRate: c.clockRate},
+		}, c.kind))
+	}
 }
 
 func MustCreatePeerConnection() *webrtc.PeerConnection {
@@ -43,36 +72,73 @@ func MustCreatePeerConnection() *webrtc.PeerConnection {
 	return pc
 }
 
-func MustRegisterCodecs(me *webrtc.MediaEngine) {
-	codecs := []struct {
-		mime      string
-		clockRate uint32
-		kind      webrtc.RTPCodecType
-	}{
-		{webrtc.MimeTypeVP8, 90000, webrtc.RTPCodecTypeVideo},
-		{webrtc.MimeTypeOpus, 48000, webrtc.RTPCodecTypeAudio},
+func RegisterPCCallbacks(sessionManager SessionManager, session Session, conn ws.WebSocketConnection) {
+	session.GetPeerConnection().OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		sessionManager.AddRemoteTrackStream(track.ID(), track)
+		sessionManager.SetOwnerSessionIdForTrack(track.ID(), session.GetClientId())
+
+		for _, s := range sessionManager.GetSessions() {
+			if s.GetClientId() == session.GetClientId() || !s.IsInitialized() {
+				continue
+			}
+
+			s.AddRemoteTrackStream(track.ID(), track)
+			s.HandleStreamForwarding(track.ID(), s.GetClientId())
+		}
+	})
+
+	session.GetPeerConnection().OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c == nil {
+			return
+		}
+
+		conn.Emit("ice_candidate", session.GetClientId(), c)
+	})
+
+	session.GetPeerConnection().OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		logger.Sugar.Infof("ICE Connection state: %s", state)
+	})
+
+	session.GetPeerConnection().OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		logger.Sugar.Infof("Peer Connection state: %s", state)
+		if state == webrtc.PeerConnectionStateConnected {
+			for pending := range session.GetQueueTrackForwarding() {
+				pending()
+			}
+		}
+
+		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
+			RemoveFromSessionManager(sessionManager, session.GetClientId())
+
+			if session.GetClientId() != "" {
+				conn.Emit("peer_connection_closed", session.GetClientId(), "Peer connection closed due to failure or closure")
+			}
+		}
+	})
+}
+
+func RemoveFromSessionManager(sessionManager SessionManager, clientID string) {
+	session, exists := sessionManager.GetSession(clientID)
+	if !exists || session == nil {
+		return
 	}
-	for _, c := range codecs {
-		Must(me.RegisterCodec(webrtc.RTPCodecParameters{
-			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: c.mime, ClockRate: c.clockRate},
-		}, c.kind))
+
+	session.Close()
+
+	sessionManager.RemoveTracksForSession(session.GetClientId())
+	sessionManager.RemoveSession(session.GetClientId())
+
+	for _, othersSession := range sessionManager.GetSessions() {
+		othersSession.RemoveRemoteTrackFromOwner(session.GetClientId())
+	}
+
+	if len(sessionManager.GetSessions()) == 0 {
+		delete(GlobalSessionManager, sessionManager.GetGroupId())
 	}
 }
 
-var WSIDtoClientID = make(map[string]string)
-
-func InitPeerConnectionForSession(hub ws.WsHub, conn ws.WebSocketConnection, session Session, sesssessionManager SessionManager) {
-	pc := MustCreatePeerConnection()
-	RegisterPeerCallbacks(hub, pc, conn)
-
-	session.SetEmitFunc(func(event string, data ...any) {
-		conn.Emit(event, data...)
-	})
-
-	session.Init(pc)
-
-	// register tracks for existing streams in the session
-	for _, track := range sesssessionManager.GetSubscribedTracks() {
+func BoostrapSession(sessionManager SessionManager, session Session) {
+	for _, track := range sessionManager.GetSubscribedTracks() {
 		if track.Metadata == nil || track.Track == nil {
 			continue
 		}
@@ -84,127 +150,8 @@ func InitPeerConnectionForSession(hub ws.WsHub, conn ws.WebSocketConnection, ses
 		session.AddRemoteTrackStream(track.Track.ID(), track.Track)
 		session.AddRemoteTrackMeta(track.Track.ID(), *track.Metadata)
 		session.SetOwnerSessionIdForTrack(track.Track.ID(), track.Metadata.clientId)
-		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId, true)
+		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId)
 	}
-
-}
-
-func HandleDisconnectByWsClient(conn ws.WebSocketConnection) {
-	groupID := conn.GetGroupId()
-	sessionManager, exists := GlobalSessionManager[*groupID]
-
-	if groupID == nil || !exists {
-		return
-	}
-
-	clientID, exists := WSIDtoClientID[conn.ID()]
-	if !exists {
-		return
-	}
-
-	Session, exists := sessionManager.GetSession(clientID)
-	if !exists || Session == nil {
-		return
-	}
-
-	Session.Close()
-
-	for _, track := range Session.GetRemoteTracks() {
-		Session.RemoveRemoteTrack(track.Track.ID())
-	}
-
-	sessionManager.RemoveTracksForSession(Session.GetClientId())
-	sessionManager.RemoveSession(Session.GetClientId())
-
-	for _, s := range sessionManager.GetSessions(*groupID) {
-		s.RemoveRemoteTrackFromOwner(clientID)
-	}
-
-	if len(sessionManager.GetSessions(*groupID)) == 0 {
-		delete(GlobalSessionManager, *groupID)
-	}
-
-	delete(WSIDtoClientID, conn.ID())
-
-}
-
-func RegisterPeerCallbacks(hub ws.WsHub, pc *webrtc.PeerConnection, conn ws.WebSocketConnection) {
-	pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		groupID := conn.GetGroupId()
-		sessionManager, exists := GlobalSessionManager[*groupID]
-
-		if groupID == nil || !exists {
-			return
-		}
-
-		clientID, exists := WSIDtoClientID[conn.ID()]
-		if !exists {
-			return
-		}
-
-		Session, exists := sessionManager.GetSession(clientID)
-		if !exists || Session == nil {
-			return
-		}
-
-		if !Session.IsInitialized() {
-			InitPeerConnectionForSession(hub, conn, Session, sessionManager)
-		}
-
-		sessionManager.AddRemoteTrackStream(track.ID(), track)
-		sessionManager.SetOwnerSessionIdForTrack(track.ID(), clientID)
-
-		for _, s := range sessionManager.GetSessions(*groupID) {
-			if s.GetClientId() == clientID || !s.IsInitialized() {
-				continue
-			}
-
-			s.AddRemoteTrackStream(track.ID(), track)
-			s.HandleStreamForwarding(track.ID(), clientID, true)
-		}
-
-	})
-
-	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		logger.Sugar.Infof("ICE Connection state: %s", state)
-	})
-
-	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		logger.Sugar.Infof("Peer Connection state closed: %s", state)
-		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
-			clientID, _ := WSIDtoClientID[conn.ID()]
-			HandleDisconnectByWsClient(conn)
-
-			if clientID != "" {
-				conn.Emit("peer_connection_closed", clientID, "Peer connection closed due to failure or closure")
-			}
-		}
-	})
-
-	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
-		if c == nil {
-			return
-		}
-
-		groupID := conn.GetGroupId()
-		sessionManager, exists := GlobalSessionManager[*groupID]
-
-		if groupID == nil || !exists {
-			return
-		}
-
-		clientID, exists := WSIDtoClientID[conn.ID()]
-		if !exists {
-			return
-		}
-
-		Session, exists := sessionManager.GetSession(clientID)
-		if !exists || Session == nil {
-			return
-		}
-
-		conn.Emit("ice_candidate", Session.GetClientId(), c)
-	})
 }
 
 func RegisterHandlers(hub ws.WsHub) {
@@ -218,10 +165,7 @@ func RegisterHandlers(hub ws.WsHub) {
 	hub.On("track_changed", func(conn ws.WebSocketConnection, data ...any) {
 		handleTrackChanged(conn, data...)
 	})
-	// hub.On("ice_connected", HandleLateJoin)
-	// hub.On("disconnect", func(conn ws.WebSocketConnection, data ...any) {
-	// 	HandleDisconnectByWsClient(conn)
-	// })
+
 	hub.On("leave_room", func(conn ws.WebSocketConnection, data ...any) {
 		HandleLeaveRoom(hub, conn, data...)
 	})

@@ -45,12 +45,10 @@ type Session interface {
 	AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote)
 	RemoveRemoteTrack(trackId string)
 
-	HandleStreamForwarding(trackID string, clientID string, shouldRenegotiate bool)
+	HandleStreamForwarding(trackID string, clientID string)
 
 	SetSubscribedTrack(trackId string, subscribed bool)
 	SetOwnerSessionIdForTrack(trackId string, sessionId string)
-
-	Init(pc *webrtc.PeerConnection)
 
 	RemoveRemoteTrackFromOwner(clientId string)
 
@@ -62,6 +60,13 @@ type Session interface {
 	Renegotiate(attempt *int) error
 
 	GetOfferWaitChan() chan bool
+
+	GetQueueTrackForwarding() chan func()
+}
+
+type WaitTrackResult struct {
+	Track *webrtc.TrackRemote
+	Err   error
 }
 
 type session struct {
@@ -75,22 +80,28 @@ type session struct {
 	closed               bool
 	emitFn               func(event string, data ...any)
 	offerWaitChan        chan bool
+	queueTrackForwarding chan func()
 	failedRenegotiations []func(attempt int)
 }
 
-func NewSession(clientID string) Session {
+func NewSession(clientID string, pc *webrtc.PeerConnection) Session {
+
 	return &session{
-		pc: nil,
-		// transceivers:         nil,
+		pc:                   pc,
 		clientId:             clientID,
 		mu:                   sync.Mutex{},
 		remoteSet:            false,
 		remoteTracks:         make(map[string]SessionTrack),
-		initialized:          false,
+		initialized:          true,
 		closed:               false,
 		offerWaitChan:        make(chan bool, 1),
+		queueTrackForwarding: make(chan func()),
 		failedRenegotiations: make([]func(attempt int), 0),
 	}
+}
+
+func (s *session) GetQueueTrackForwarding() chan func() {
+	return s.queueTrackForwarding
 }
 
 func (s *session) GetOfferWaitChan() chan bool {
@@ -110,7 +121,6 @@ func (s *session) SetEmitFunc(fn func(event string, data ...any)) {
 }
 
 func (s *session) Renegotiate(attempt *int) error {
-	// Ensure only one renegotiation happens at a time
 	s.offerWaitChan <- true
 
 	pc := s.pc
@@ -165,17 +175,8 @@ func (s *session) RemoveRemoteTrackFromOwner(clientId string) {
 			sessionTracksMetadata = append(sessionTracksMetadata, track.Metadata)
 		}
 
-		if err := s.Renegotiate(nil); err != nil {
-			logger.Sugar.Errorf("Error renegotiating after removing tracks for session %s: %v", s.clientId, err)
-		}
-
 		s.emitFn("disconnect_remote_stream", clientId, sessionTracksMetadata)
 	}
-}
-
-func (s *session) Init(pc *webrtc.PeerConnection) {
-	s.pc = pc
-	s.initialized = true
 }
 
 func (s *session) SetOwnerSessionIdForTrack(trackId string, sessionId string) {
@@ -196,7 +197,7 @@ func (s *session) SetSubscribedTrack(trackId string, subscribed bool) {
 	}
 }
 
-func (s *session) HandleStreamForwarding(trackID string, clientID string, shouldRenegotiate bool) {
+func (s *session) HandleStreamForwarding(trackID string, clientID string) {
 	s.mu.Lock()
 	track, exists := s.remoteTracks[trackID]
 	s.mu.Unlock()
@@ -205,47 +206,54 @@ func (s *session) HandleStreamForwarding(trackID string, clientID string, should
 		return
 	}
 
+	s.SetOwnerSessionIdForTrack(track.Track.ID(), clientID)
+
 	if track.Track == nil || track.Metadata == nil {
 		logger.Sugar.Warnf("Skipping forwarding for track %s in session %s because track or metadata is nil", trackID, s.clientId)
 		return
 	}
 
-	s.SetOwnerSessionIdForTrack(track.Track.ID(), clientID)
 	if track.IsSubscribed {
 		logger.Sugar.Infof("Not forwarding track %s (kind=%s) for session %s because it's subscribed", trackID, track.Metadata.kind, s.clientId)
 		return
 	}
 
-	transceiver, localTrack, err := createLocalTrancieverAndTrack(track.Track, s)
-	if err != nil {
-		logger.Sugar.Errorf("Error creating local track for forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
-		return
-	}
+	if s.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
+		transceiver, localTrack, err := createLocalTrancieverAndTrack(track.Track, s)
 
-	if shouldRenegotiate {
-		if s.Renegotiate(nil) != nil {
+		if err != nil {
+			logger.Sugar.Errorf("Error creating local track for forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
+			return
+		}
+
+		s.SetSubscribedTrack(trackID, true)
+		err = forwardTrack(s.pc, transceiver, track.Track, localTrack)
+		if err != nil {
+			logger.Sugar.Errorf("Error forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
+			return
+		}
+
+		if err := s.Renegotiate(nil); err != nil {
 			logger.Sugar.Errorf("Error renegotiating after forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
 			return
 		}
+	} else {
+		transceiver, localTrack, err := createLocalTrancieverAndTrack(track.Track, s)
+		if err != nil {
+			logger.Sugar.Errorf("Error creating local track for forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
+			return
+		}
+
+		s.queueTrackForwarding <- func() {
+			s.SetSubscribedTrack(trackID, true)
+			err = forwardTrack(s.pc, transceiver, track.Track, localTrack)
+			if err != nil {
+				logger.Sugar.Errorf("Error forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
+				return
+			}
+		}
 	}
 
-	s.SetSubscribedTrack(trackID, true)
-
-	err = forwardTrack(s.pc, transceiver, track.Track, localTrack)
-	if err != nil {
-		logger.Sugar.Errorf("Error forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
-		return
-	}
-
-	// if transceiver.Mid() != "" {
-	// 	s.emitFn("new_track", clientID, map[string]interface{}{
-	// 		"clientId":       clientID,
-	// 		"trackId":        trackID,
-	// 		"kind":           track.Metadata.kind,
-	// 		"streamGroupId":  track.Metadata.streamGroupId,
-	// 		"transceiverMid": transceiver.Mid(),
-	// 	})
-	// }
 }
 
 func (s *session) GetRemoteTrack(trackId string) (SessionTrack, bool) {
@@ -321,36 +329,50 @@ func (s *session) GetClientId() string {
 
 func (s *session) Close() {
 	s.mu.Lock()
+
 	defer s.mu.Unlock()
 	if s.pc != nil {
 		s.pc.Close()
 		s.pc = nil
 	}
+
+	for _, track := range s.GetRemoteTracks() {
+		s.RemoveRemoteTrack(track.Track.ID())
+	}
+
 	s.remoteTracks = make(map[string]SessionTrack)
 	s.closed = true
 }
 
 type SessionManager interface {
+	GetGroupId() string
+
+	AddSession(session Session, wsID string)
 	GetSession(clientId string) (Session, bool)
-	AddSession(session Session)
+	GetSessions() []Session
+
 	RemoveSession(clientId string)
+
 	CloseAll() error
 
 	AddRemoteTrackMeta(trackID string, metadata SessionTrackMetadata)
 	AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote)
 	RemoveSubscribedTrack(trackId string)
-	GetSubscribedTracks() []SessionTrack
 
-	GetSessions(id string) []Session
+	GetSubscribedTracks() []SessionTrack
 
 	SetOwnerSessionIdForTrack(trackId string, sessionId string)
 	RemoveTracksForSession(sessionId string)
+
+	GetClientIDFromWsID(wsID string) (string, bool)
+	GetSessionByWsID(wsID string) (Session, bool)
 }
 
 type sessionManager struct {
 	id               string
 	sessions         map[string]Session
 	subscribedTracks map[string]SessionTrack
+	wsToClientId     map[string]string
 	mu               sync.RWMutex
 }
 
@@ -359,8 +381,13 @@ func NewSessionManager(id string) SessionManager {
 		id:               id,
 		sessions:         make(map[string]Session),
 		subscribedTracks: make(map[string]SessionTrack),
+		wsToClientId:     make(map[string]string),
 		mu:               sync.RWMutex{},
 	}
+}
+
+func (sm *sessionManager) GetGroupId() string {
+	return sm.id
 }
 
 func (sm *sessionManager) RemoveTracksForSession(sessionId string) {
@@ -382,7 +409,7 @@ func (sm *sessionManager) SetOwnerSessionIdForTrack(trackId string, sessionId st
 	}
 }
 
-func (sm *sessionManager) GetSessions(id string) []Session {
+func (sm *sessionManager) GetSessions() []Session {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	sessions := make([]Session, 0, len(sm.sessions))
@@ -438,16 +465,23 @@ func (sm *sessionManager) GetSession(clientId string) (Session, bool) {
 	return session, exists
 }
 
-func (sm *sessionManager) AddSession(session Session) {
+func (sm *sessionManager) AddSession(session Session, wsID string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.sessions[session.GetClientId()] = session
+	sm.wsToClientId[wsID] = session.GetClientId()
 }
 
 func (sm *sessionManager) RemoveSession(clientId string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	delete(sm.sessions, clientId)
+	for wsID, cid := range sm.wsToClientId {
+		if cid == clientId {
+			delete(sm.wsToClientId, wsID)
+			break
+		}
+	}
 }
 
 func (sm *sessionManager) CloseAll() error {
@@ -457,5 +491,24 @@ func (sm *sessionManager) CloseAll() error {
 		session.Close()
 	}
 	sm.sessions = make(map[string]Session)
+	sm.wsToClientId = make(map[string]string)
 	return nil
+}
+
+func (sm *sessionManager) GetClientIDFromWsID(wsID string) (string, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	clientID, exists := sm.wsToClientId[wsID]
+	return clientID, exists
+}
+
+func (sm *sessionManager) GetSessionByWsID(wsID string) (Session, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	clientID, exists := sm.wsToClientId[wsID]
+	if !exists {
+		return nil, false
+	}
+	session, exists := sm.sessions[clientID]
+	return session, exists
 }
