@@ -45,7 +45,7 @@ type Session interface {
 	AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote)
 	RemoveRemoteTrack(trackId string)
 
-	HandleStreamForwarding(trackID string, clientID string)
+	HandleStreamForwarding(trackID string, clientID string, firstInit bool)
 
 	SetSubscribedTrack(trackId string, subscribed bool)
 	SetOwnerSessionIdForTrack(trackId string, sessionId string)
@@ -199,7 +199,7 @@ func (s *session) SetSubscribedTrack(trackId string, subscribed bool) {
 	}
 }
 
-func (s *session) HandleStreamForwarding(trackID string, clientID string) {
+func (s *session) HandleStreamForwarding(trackID string, clientID string, firstInit bool) {
 	s.mu.Lock()
 	track, exists := s.remoteTracks[trackID]
 	s.mu.Unlock()
@@ -220,7 +220,7 @@ func (s *session) HandleStreamForwarding(trackID string, clientID string) {
 		return
 	}
 
-	if s.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
+	if !firstInit {
 		transceiver, localTrack, err := createLocalTrancieverAndTrack(track.Track, s)
 
 		if err != nil {

@@ -173,7 +173,7 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 		}
 
 		s.AddRemoteTrackMeta(trackId, metadata)
-		s.HandleStreamForwarding(trackId, metadata.clientId)
+		s.HandleStreamForwarding(trackId, metadata.clientId, false)
 	}
 }
 

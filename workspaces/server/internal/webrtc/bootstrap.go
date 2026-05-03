@@ -83,7 +83,7 @@ func RegisterPCCallbacks(hub ws.WsHub, sessionManager SessionManager, session Se
 			}
 
 			s.AddRemoteTrackStream(track.ID(), track)
-			s.HandleStreamForwarding(track.ID(), s.GetClientId())
+			s.HandleStreamForwarding(track.ID(), s.GetClientId(), false)
 		}
 	})
 
@@ -150,7 +150,7 @@ func BoostrapSession(sessionManager SessionManager, session Session) {
 		session.AddRemoteTrackStream(track.Track.ID(), track.Track)
 		session.AddRemoteTrackMeta(track.Track.ID(), *track.Metadata)
 		session.SetOwnerSessionIdForTrack(track.Track.ID(), track.Metadata.clientId)
-		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId)
+		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId, true)
 	}
 }
 
