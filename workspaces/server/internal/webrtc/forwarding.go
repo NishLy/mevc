@@ -20,10 +20,7 @@ func createLocalTrancieverAndTrack(track *webrtc.TrackRemote, session Session) (
 		return nil, nil, err
 	}
 
-	// Explicitly set direction to SendOnly
-	transceiver, err := pc.AddTransceiverFromTrack(localTrack, webrtc.RTPTransceiverInit{
-		Direction: webrtc.RTPTransceiverDirectionSendonly,
-	})
+	transceiver, err := pc.AddTransceiverFromTrack(localTrack)
 
 	return transceiver, localTrack, err
 }
