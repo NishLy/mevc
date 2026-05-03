@@ -172,6 +172,7 @@ export class WebRTCService {
       const track = event.track
       const mid = event.transceiver.mid
 
+      console.log("Received track:", track.id, "MID:", mid)
       if (this.ownTrackIds.has(track.id)) {
         return
       }

@@ -52,8 +52,6 @@ type Session interface {
 
 	RemoveRemoteTrackFromOwner(clientId string)
 
-	removeTrackFromPeerConnectionBatch(clientId string, tracks []SessionTrack)
-
 	IsInitialized() bool
 
 	SetEmitFunc(fn func(event string, data ...any))
@@ -145,12 +143,10 @@ func (s *session) Renegotiate(attempt *int) error {
 	return nil
 }
 
-func (s *session) removeTrackFromPeerConnectionBatch(clientId string, tracks []SessionTrack) {
-	for _, track := range tracks {
-		for _, transceiver := range s.pc.GetTransceivers() {
-			if transceiver.Sender() != nil && transceiver.Sender().Track() != nil && transceiver.Sender().Track().ID() == track.Track.ID() {
-				s.pc.RemoveTrack(transceiver.Sender())
-			}
+func (s *session) removeTrackFromPeerConnection(trackID string) {
+	for _, transceiver := range s.pc.GetTransceivers() {
+		if transceiver.Sender() != nil && transceiver.Sender().Track() != nil && transceiver.Sender().Track().ID() == trackID {
+			s.pc.RemoveTrack(transceiver.Sender())
 		}
 	}
 }
@@ -159,25 +155,13 @@ func (s *session) RemoveRemoteTrackFromOwner(clientId string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var tracksToRemove []SessionTrack
 	for trackId, track := range s.remoteTracks {
 		if track.OwnerSessionId == clientId {
 			delete(s.remoteTracks, trackId)
 			if track.Track != nil {
-				tracksToRemove = append(tracksToRemove, track)
+				s.removeTrackFromPeerConnection(track.Track.ID())
 			}
 		}
-	}
-
-	if len(tracksToRemove) > 0 {
-		s.removeTrackFromPeerConnectionBatch(clientId, tracksToRemove)
-		sessionTracksMetadata := make([]*SessionTrackMetadata, 0, len(tracksToRemove))
-
-		for _, track := range tracksToRemove {
-			sessionTracksMetadata = append(sessionTracksMetadata, track.Metadata)
-		}
-
-		s.emitFn("disconnect_remote_stream", clientId, sessionTracksMetadata)
 	}
 }
 
@@ -349,7 +333,7 @@ func (s *session) Close() {
 	}
 
 	for _, track := range s.GetRemoteTracks() {
-		s.RemoveRemoteTrack(track.Track.ID())
+		s.RemoveRemoteTrack(track.Metadata.trackId)
 	}
 
 	s.remoteTracks = make(map[string]SessionTrack)
@@ -488,10 +472,6 @@ func (sm *sessionManager) AddSession(session Session, wsID string) {
 func (sm *sessionManager) RemoveSession(clientId string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-
-	if session, exists := sm.sessions[clientId]; exists {
-		session.Close()
-	}
 
 	delete(sm.sessions, clientId)
 
