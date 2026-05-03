@@ -133,7 +133,6 @@ export class MediaStreamController {
 
       // Defer setting the local stream to ensure any onLocalStreamUpdateCallback is set
       setTimeout(() => {
-        console.log(this.currentLocalStream, this.onLocalStreamUpdateCallback)
         if (this.currentLocalStream) {
           this.setLocalStream(LOCAL_STREAM_CONSTANT, this.currentLocalStream)
         }

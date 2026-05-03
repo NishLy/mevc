@@ -26,7 +26,7 @@ export default function Room({ roomId }: RoomProps) {
 
   useEffect(() => {
     wsocketService.current = new WSservice({
-      url: "ws://localhost:8000/ws?tenant_id=123",
+      url: "wss://67ea-36-68-55-7.ngrok-free.app/ws?tenant_id=123",
       options: {
         autoConnect: true,
         listeners: {
@@ -76,8 +76,25 @@ export default function Room({ roomId }: RoomProps) {
           const newRemoteStreams = [
             ...useMeet.getState().remoteStreams,
             streamItem,
-          ]
-          useMeet.setState({ remoteStreams: newRemoteStreams })
+          ].reduce(
+            (acc, stream) => {
+              if (!stream.id) return acc
+
+              if (acc[stream.id]) {
+                acc[stream.id] = {
+                  ...(acc[stream.id] as MediaStreamItem),
+                  stream: stream.stream, // Update the stream reference
+                }
+              } else {
+                acc[stream.id] = stream
+              }
+
+              return acc
+            },
+            {} as Record<string, MediaStreamItem>
+          )
+
+          useMeet.setState({ remoteStreams: Object.values(newRemoteStreams) })
         },
         onRemovedRemoteStream: (streamGroupId) => {
           const newRemoteStreams = useMeet

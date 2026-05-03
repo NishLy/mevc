@@ -91,26 +91,17 @@ export class WebRTCService {
       this.tryResolve(mid)
     })
 
-    this.wsService?.on(
-      "disconnect_remote_stream",
-      (clientId: string, trackMetas: TrackMeta[]) => {
-        const clientsStreamsGroupId = Array.from(this.resolvedStreams.entries())
-          .filter(([_, value]) => value.clientId === clientId)
-          .map(([key]) => key)
+    this.wsService?.on("disconnect_remote_stream", (clientId: string) => {
+      console.log("Disconnecting streams for client:", clientId)
+      const clientsStreamsGroupId = Array.from(this.resolvedStreams.entries())
+        .filter(([_, value]) => value.clientId === clientId)
+        .map(([key]) => key)
 
-        console.log(
-          "Disconnecting remote stream for client:",
-          clientId,
-          "stream group IDs:",
-          clientsStreamsGroupId
-        )
-
-        for (const streamGroupId of clientsStreamsGroupId) {
-          this.resolvedStreams.delete(streamGroupId)
-          this.options.onRemovedRemoteStream?.(streamGroupId)
-        }
+      for (const streamGroupId of clientsStreamsGroupId) {
+        this.resolvedStreams.delete(streamGroupId)
+        this.options.onRemovedRemoteStream?.(streamGroupId)
       }
-    )
+    })
 
     // Server-driven renegotiation: after forwardTrack → ReplaceTrack the server
     // sends a new offer whose MSID contains the publisher's real track ID.
@@ -217,12 +208,12 @@ export class WebRTCService {
   }
 
   // Called from both sides — only acts when both meta + track are present
-  private tryResolve(trackId: string) {
-    const entry = this.pending.get(trackId)
+  private tryResolve(mid: string) {
+    const entry = this.pending.get(mid)
 
     if (!entry?.meta || !entry?.track) return // wait for the other side
 
-    this.pending.delete(trackId)
+    this.pending.delete(mid)
 
     const { clientId, streamGroupId, kind } = entry.meta
     const track = entry.track
@@ -241,11 +232,10 @@ export class WebRTCService {
   }
 
   private attachOrUpdate(streamGroupId: string) {
+    console.log("Attaching/updating stream for group ID:", streamGroupId)
     const resolved = this.resolvedStreams.get(streamGroupId)!
     const videoTrack = resolved.tracks.get("video")
     const audioTrack = resolved.tracks.get("audio")
-
-    if (!videoTrack) return
 
     const ms = new MediaStream()
     if (videoTrack) ms.addTrack(videoTrack)
