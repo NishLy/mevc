@@ -229,7 +229,7 @@ func (s *session) HandleStreamForwarding(trackID string, clientID string, firstI
 		}
 
 		s.SetSubscribedTrack(trackID, true)
-		err = forwardTrack(s.pc, transceiver, track.Track, localTrack)
+		err = forwardTrack(s.pc, transceiver, track.Track, localTrack, s.clientId)
 		if err != nil {
 			logger.Sugar.Errorf("Error forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
 			return
@@ -248,7 +248,7 @@ func (s *session) HandleStreamForwarding(trackID string, clientID string, firstI
 
 		s.queueTrackForwarding <- func() {
 			s.SetSubscribedTrack(trackID, true)
-			err = forwardTrack(s.pc, transceiver, track.Track, localTrack)
+			err = forwardTrack(s.pc, transceiver, track.Track, localTrack, s.clientId)
 			if err != nil {
 				logger.Sugar.Errorf("Error forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
 				return
@@ -323,8 +323,6 @@ func (s *session) AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote
 }
 
 func (s *session) RemoveRemoteTrack(trackId string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	delete(s.remoteTracks, trackId)
 }
 
@@ -490,9 +488,16 @@ func (sm *sessionManager) AddSession(session Session, wsID string) {
 func (sm *sessionManager) RemoveSession(clientId string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+
+	if session, exists := sm.sessions[clientId]; exists {
+		session.Close()
+	}
+
 	delete(sm.sessions, clientId)
+
 	for wsID, cid := range sm.wsToClientId {
 		if cid == clientId {
+
 			delete(sm.wsToClientId, wsID)
 			break
 		}

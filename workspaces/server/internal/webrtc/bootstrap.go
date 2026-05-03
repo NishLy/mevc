@@ -121,8 +121,6 @@ func RemoveFromSessionManager(hub ws.WsHub, sessionManager SessionManager, clien
 		return
 	}
 
-	session.Close()
-
 	sessionManager.RemoveTracksForSession(session.GetClientId())
 	sessionManager.RemoveSession(session.GetClientId())
 

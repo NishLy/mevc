@@ -3,6 +3,7 @@ package rtc
 import (
 	"time"
 
+	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 )
@@ -19,12 +20,12 @@ func createLocalTrancieverAndTrack(track *webrtc.TrackRemote, session Session) (
 		return nil, nil, err
 	}
 
-	transceiver, err := pc.AddTransceiverFromTrack(localTrack)
-	if err != nil {
-		return nil, nil, err
-	}
+	// Explicitly set direction to SendOnly
+	transceiver, err := pc.AddTransceiverFromTrack(localTrack, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
+	})
 
-	return transceiver, localTrack, nil
+	return transceiver, localTrack, err
 }
 
 func check(sender *webrtc.RTPSender, track *webrtc.TrackRemote) uint8 {
@@ -41,7 +42,9 @@ func check(sender *webrtc.RTPSender, track *webrtc.TrackRemote) uint8 {
 	return targetPT
 }
 
-func forwardTrack(pc *webrtc.PeerConnection, transceiver *webrtc.RTPTransceiver, track *webrtc.TrackRemote, localTrack *webrtc.TrackLocalStaticRTP) error {
+func forwardTrack(pc *webrtc.PeerConnection, transceiver *webrtc.RTPTransceiver, track *webrtc.TrackRemote, localTrack *webrtc.TrackLocalStaticRTP, clientID string) error {
+	logger.Sugar.Infof("Starting to forward track for client %s: SSRC=%d, PT=%d, Seq=%d", clientID, track.SSRC(), track.PayloadType(), 0)
+
 	for {
 		if pc.SignalingState() == webrtc.SignalingStateStable {
 			params := transceiver.Sender().GetParameters()
@@ -86,6 +89,7 @@ func forwardTrack(pc *webrtc.PeerConnection, transceiver *webrtc.RTPTransceiver,
 		for {
 			pkt, _, err := track.ReadRTP()
 			if err != nil {
+				logger.Sugar.Errorf("ReadRTP error: %v", err)
 				return
 			}
 
@@ -95,12 +99,15 @@ func forwardTrack(pc *webrtc.PeerConnection, transceiver *webrtc.RTPTransceiver,
 				if targetPT == 0 {
 					continue
 				}
-
 			}
+
+			// logger.Sugar.Infof("Writing RTP packet: SSRC=%d, PT=%d, Seq=%d",
+			// 	pkt.SSRC, pkt.PayloadType, pkt.SequenceNumber)
 
 			pkt.PayloadType = targetPT
 
 			if err := localTrack.WriteRTP(pkt); err != nil {
+				logger.Sugar.Errorf("WriteRTP error: %v", err)
 				return
 			}
 		}
