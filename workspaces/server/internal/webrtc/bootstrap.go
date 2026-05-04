@@ -164,8 +164,11 @@ func AttachExistingStreams(sessionManager SessionManager, session Session) {
 		session.AddRemoteTrackStream(track.Track.ID(), track.Track)
 		session.AddRemoteTrackMeta(track.Track.ID(), *track.Metadata)
 		session.SetOwnerSessionIdForTrack(track.Track.ID(), track.Metadata.clientId)
-		session.StartRTPStream(track.Metadata.trackId, track.Metadata.clientId)
-		count++
+		startedSession := session.StartRTPStream(track.Metadata.trackId, track.Metadata.clientId)
+
+		if startedSession != nil {
+			count++
+		}
 	}
 
 	if count > 0 {
