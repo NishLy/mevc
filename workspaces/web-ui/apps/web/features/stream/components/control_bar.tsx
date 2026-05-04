@@ -230,7 +230,7 @@ export default function ControlBar() {
   )
 
   return (
-    <div className="pointer-events-none fixed inset-0 flex items-end justify-center pb-6">
+    <div className="pointer-events-none fixed inset-0 z-20 flex items-end justify-center pb-6 opacity-20 transition-opacity hover:opacity-100">
       {/* video here */}
       {/* <video id="localVideo" autoPlay playsInline controls={false} className="absolute inset-0 w-full h-full object-cover" /> */}
 
