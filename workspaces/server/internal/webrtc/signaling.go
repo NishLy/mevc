@@ -194,6 +194,8 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 			logger.Sugar.Errorf("Failed to renegotiate for session %s: %v", otherSession.GetClientId(), err)
 		}
 	}
+
+	logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", clientID, trackId, kind, streamGroupId)
 }
 
 func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) {

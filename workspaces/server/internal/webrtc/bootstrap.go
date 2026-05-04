@@ -76,7 +76,7 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 	session.GetPeerConnection().OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		sessionManager.AddRemoteTrackStream(track.ID(), track)
 		sessionManager.SetOwnerSessionIdForTrack(track.ID(), session.GetClientId())
-
+		
 		var sessionsToBeRenegotiated []Session
 
 		for _, otherSession := range sessionManager.GetSessions() {
@@ -97,6 +97,8 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 				logger.Sugar.Errorf("Failed to renegotiate for session %s: %v", otherSession.GetClientId(), err)
 			}
 		}
+
+		logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", session.GetClientId(), track.ID(), track.Kind().String(), sessionManager.GetGroupId())
 	})
 
 	session.GetPeerConnection().OnICECandidate(func(c *webrtc.ICECandidate) {

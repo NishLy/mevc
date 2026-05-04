@@ -316,6 +316,12 @@ export class WebRTCService {
 
         stream.stream.getTracks().forEach((track) => {
           this.peerConnection?.addTrack(track, stream.stream)
+          console.log(
+            "Added local track:",
+            track.id,
+            "to stream:",
+            stream.stream.id
+          )
           this.emit("track_changed", {
             trackId: track.id,
             kind: track.kind,
