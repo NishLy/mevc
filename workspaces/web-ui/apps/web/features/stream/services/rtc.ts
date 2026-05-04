@@ -38,6 +38,7 @@ export class WebRTCService {
     string,
     {
       clientId: string
+      meta: TrackMeta
       tracks: Map<string, MediaStreamTrack>
     }
   > = new Map()
@@ -240,6 +241,7 @@ export class WebRTCService {
       this.resolvedStreams.set(streamGroupId, {
         clientId,
         tracks: new Map(),
+        meta: entry.meta,
       })
     }
 

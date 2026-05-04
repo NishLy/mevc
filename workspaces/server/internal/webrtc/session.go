@@ -58,6 +58,10 @@ type Session interface {
 	Renegotiate(attempt *int) error
 
 	GetOfferWaitChan() chan bool
+	AddSelfTrackMetadata(trackID string, metadata SessionTrackMetadata)
+	RemoveSelfTrackMetadata(trackID string)
+
+	GetSelfTracksMetadata(streamGroupId string) (SessionTrackMetadata, bool)
 }
 
 type WaitTrackResult struct {
@@ -68,32 +72,53 @@ type WaitTrackResult struct {
 type session struct {
 	pc *webrtc.PeerConnection
 	// transceivers         []*ManagedTransceiver
-	clientId             string
-	mu                   sync.Mutex
-	remoteSet            bool
-	remoteTracks         map[string]SessionTrack
-	initialized          bool
-	closed               bool
-	emitFn               func(event string, data ...any)
-	offerWaitChan        chan bool
-	queueTrackForwarding chan func()
-	failedRenegotiations []func(attempt int)
+	clientId           string
+	mu                 sync.Mutex
+	remoteSet          bool
+	remoteTracks       map[string]SessionTrack
+	initialized        bool
+	closed             bool
+	emitFn             func(event string, data ...any)
+	offerWaitChan      chan bool
+	selfTracksMetadata map[string]SessionTrackMetadata
 }
 
 func NewSession(clientID string, pc *webrtc.PeerConnection) Session {
 
 	return &session{
-		pc:                   pc,
-		clientId:             clientID,
-		mu:                   sync.Mutex{},
-		remoteSet:            false,
-		remoteTracks:         make(map[string]SessionTrack),
-		initialized:          true,
-		closed:               false,
-		offerWaitChan:        make(chan bool, 1),
-		queueTrackForwarding: make(chan func(), 100),
-		failedRenegotiations: make([]func(attempt int), 0),
+		pc:                 pc,
+		clientId:           clientID,
+		mu:                 sync.Mutex{},
+		remoteSet:          false,
+		remoteTracks:       make(map[string]SessionTrack),
+		initialized:        true,
+		closed:             false,
+		offerWaitChan:      make(chan bool, 1),
+		selfTracksMetadata: make(map[string]SessionTrackMetadata),
 	}
+}
+
+func (s *session) AddSelfTrackMetadata(trackID string, metadata SessionTrackMetadata) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.selfTracksMetadata[trackID] = metadata
+}
+
+func (s *session) GetSelfTracksMetadata(streamGroupId string) (SessionTrackMetadata, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, metadata := range s.selfTracksMetadata {
+		if metadata.streamGroupId == streamGroupId {
+			return metadata, true
+		}
+	}
+	return SessionTrackMetadata{}, false
+}
+
+func (s *session) RemoveSelfTrackMetadata(trackID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.selfTracksMetadata, trackID)
 }
 
 func (s *session) AddRemoteTrackMeta(trackID string, metadata SessionTrackMetadata) {
@@ -130,10 +155,6 @@ func (s *session) AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote
 
 func (s *session) GetClientId() string {
 	return s.clientId
-}
-
-func (s *session) GetQueueTrackForwarding() chan func() {
-	return s.queueTrackForwarding
 }
 
 func (s *session) GetOfferWaitChan() chan bool {
@@ -210,7 +231,6 @@ func (s *session) Close() {
 	}
 
 	s.remoteTracks = make(map[string]SessionTrack)
-	s.queueTrackForwarding = make(chan func(), 100)
 	s.closed = true
 }
 

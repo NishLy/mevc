@@ -164,6 +164,14 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 		clientId:      clientID,
 	}
 
+	session, exists := sessionManager.GetSession(clientID)
+
+	if !exists || session == nil {
+		logger.Sugar.Warnf("Session not found for client %s when handling track change", clientID)
+		return
+	}
+
+	session.AddSelfTrackMetadata(trackId, metadata)
 	sessionManager.AddRemoteTrackMeta(trackId, metadata)
 	sessionManager.SetOwnerSessionIdForTrack(trackId, metadata.clientId)
 
@@ -276,15 +284,26 @@ func HandleRemoveTrack(conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
-	trackId := data[1].(string)
+	streamGroupId := data[1].(string)
 
-	sessionManager.RemoveSubscribedTrack(trackId)
+	metadata, exists := session.GetSelfTracksMetadata(streamGroupId)
+	if !exists {
+		logger.Sugar.Warnf("No track metadata found for streamGroupId %s in session of client %s", streamGroupId, session.GetClientId())
+		return
+	}
+
+	session.RemoveSelfTrackMetadata(metadata.trackId)
+
+	sessionManager.RemoveSubscribedTrack(metadata.trackId)
 	for _, otherSession := range sessionManager.GetSessions() {
 		if otherSession.GetClientId() == session.GetClientId() {
 			continue
 		}
 
-		otherSession.RemoveRemoteTrack(trackId)
-		go otherSession.Renegotiate(nil)
+		otherSession.RemoveRemoteTrack(metadata.trackId)
+
+		if err := otherSession.Renegotiate(nil); err != nil {
+			logger.Sugar.Errorf("Failed to renegotiate for session %s: %v", otherSession.GetClientId(), err)
+		}
 	}
 }
