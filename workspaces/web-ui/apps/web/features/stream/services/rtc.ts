@@ -13,6 +13,8 @@ interface TrackMeta {
   clientId: string
   streamGroupId: string
   transceiverMid: string
+  streamId: string
+  label: string
 }
 
 interface PendingEntry {
@@ -82,7 +84,8 @@ export class WebRTCService {
 
   private async init() {
     this.bindMethods()
-    this.createPeerConnection()
+
+    await this.createPeerConnection()
 
     this.wsService?.on("new_track", (clientId: string, meta: TrackMeta) => {
       if (this.clientId === clientId) {
@@ -153,33 +156,68 @@ export class WebRTCService {
       }
     })
 
-    // Emit track metadata before sending offer so server
-    // has it ready when new_track fires on subscribers
-    this.localStreams.forEach((streamItem) => {
-      streamItem.stream.getTracks().forEach((track) => {
-        this.ownTrackIds.add(track.id)
-        this.emit("track_changed", {
-          trackId: track.id,
-          kind: track.kind,
-          streamGroupId: streamItem.id,
-        })
-      })
-    })
-
     await this.sendOffer()
   }
 
-  private createPeerConnection() {
+  private async splitMediaStream(sourceStream: MediaStream) {
+    const videoOnlyStream = new MediaStream()
+    const audioOnlyStream = new MediaStream()
+
+    sourceStream.getTracks().forEach((track) => {
+      if (track.kind === "video") {
+        videoOnlyStream.addTrack(track)
+      } else if (track.kind === "audio") {
+        audioOnlyStream.addTrack(track)
+      }
+    })
+
+    return { videoOnlyStream, audioOnlyStream }
+  }
+
+  private async createPeerConnection() {
     this.peerConnection = new RTCPeerConnection({
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     })
 
     // Add local tracks
-    this.localStreams.forEach((streamItem) => {
-      streamItem.stream.getTracks().forEach((track) => {
-        this.peerConnection?.addTrack(track, streamItem.stream)
+    await Promise.all(
+      Array.from(this.localStreams.values()).map(async (streamItem) => {
+        const { videoOnlyStream, audioOnlyStream } =
+          await this.splitMediaStream(streamItem.stream)
+
+        videoOnlyStream.getTracks().forEach((track) => {
+          this.peerConnection?.addTrack(track, videoOnlyStream)
+
+          const meta: TrackMeta = {
+            trackId: track.id,
+            kind: track.kind,
+            clientId: this.clientId,
+            streamGroupId: streamItem.id,
+            transceiverMid: "",
+            streamId: videoOnlyStream.id,
+            label: track.label,
+          }
+
+          this.emit("track_changed", meta)
+        })
+
+        audioOnlyStream.getTracks().forEach((track) => {
+          this.peerConnection?.addTrack(track, audioOnlyStream)
+
+          const meta: TrackMeta = {
+            trackId: track.id,
+            kind: track.kind,
+            clientId: this.clientId,
+            streamGroupId: streamItem.id,
+            transceiverMid: "",
+            streamId: audioOnlyStream.id,
+            label: track.label,
+          }
+
+          this.emit("track_changed", meta)
+        })
       })
-    })
+    )
 
     // ── WebRTC side of rendezvous ──────────────────────────────────
     // May arrive before or after new_track socket event.
@@ -310,26 +348,49 @@ export class WebRTCService {
       }
     }
 
-    for (const stream of Array.from(newStreamsMap.values())) {
-      if (!this.localStreams.has(stream.id)) {
-        hasChanged = true
+    await Promise.all(
+      Array.from(newStreamsMap.values()).map(async (streamItem) => {
+        if (this.localStreams.has(streamItem.id)) {
+          return
+        }
 
-        stream.stream.getTracks().forEach((track) => {
-          this.peerConnection?.addTrack(track, stream.stream)
-          console.log(
-            "Added local track:",
-            track.id,
-            "to stream:",
-            stream.stream.id
-          )
-          this.emit("track_changed", {
+        hasChanged = true
+        const { videoOnlyStream, audioOnlyStream } =
+          await this.splitMediaStream(streamItem.stream)
+
+        videoOnlyStream.getTracks().forEach((track) => {
+          this.peerConnection?.addTrack(track, videoOnlyStream)
+
+          const meta: TrackMeta = {
             trackId: track.id,
             kind: track.kind,
-            streamGroupId: stream.id,
-          })
+            clientId: this.clientId,
+            streamGroupId: streamItem.id,
+            transceiverMid: "",
+            streamId: videoOnlyStream.id,
+            label: track.label,
+          }
+
+          this.emit("track_changed", meta)
         })
-      }
-    }
+
+        audioOnlyStream.getTracks().forEach((track) => {
+          this.peerConnection?.addTrack(track, audioOnlyStream)
+
+          const meta: TrackMeta = {
+            trackId: track.id,
+            kind: track.kind,
+            clientId: this.clientId,
+            streamGroupId: streamItem.id,
+            transceiverMid: "",
+            streamId: audioOnlyStream.id,
+            label: track.label,
+          }
+
+          this.emit("track_changed", meta)
+        })
+      })
+    )
 
     if (hasChanged) {
       this.sendOffer().catch((err) => {

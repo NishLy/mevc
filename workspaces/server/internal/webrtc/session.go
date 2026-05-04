@@ -19,6 +19,8 @@ type SessionTrackMetadata struct {
 	kind          string
 	streamGroupId string
 	clientId      string
+	streamId      string
+	label         string
 }
 
 type SessionTrack struct {
@@ -58,8 +60,8 @@ type Session interface {
 	Renegotiate(attempt *int) error
 
 	GetOfferWaitChan() chan bool
-	AddSelfTrackMetadata(trackID string, metadata SessionTrackMetadata)
-	RemoveSelfTrackMetadata(trackID string)
+	AddSelfTrackMetadata(streamGroupId string, metadata SessionTrackMetadata)
+	RemoveSelfTrackMetadata(streamGroupId string)
 
 	GetSelfTracksMetadata(streamGroupId string) (SessionTrackMetadata, bool)
 }
@@ -247,7 +249,7 @@ func (s *session) StartRTPStream(trackID string, clientID string) Session {
 		return nil
 	}
 
-	s.SetOwnerSessionIdForTrack(track.Track.ID(), clientID)
+	s.SetOwnerSessionIdForTrack(track.Track.StreamID(), clientID)
 	err := forwardTrack(s, track.Track)
 
 	if err != nil {
@@ -298,7 +300,7 @@ func (s *session) RemoveRemoteTrack(trackId string) {
 
 	if exists && track.Track != nil {
 		if s.pc != nil {
-			mid := RemoveTrackFromPeerConnection(s.pc, track.Track.ID())
+			mid := RemoveTrackFromPeerConnection(s.pc, track.Track.StreamID())
 			if mid != nil {
 				s.emitFn("track_removed", *mid)
 			}
@@ -323,7 +325,7 @@ func (s *session) RemoveRemoteTrackFromOwner(clientId string) {
 
 			if track.Track != nil {
 				if s.pc != nil {
-					mid := RemoveTrackFromPeerConnection(s.pc, track.Track.ID())
+					mid := RemoveTrackFromPeerConnection(s.pc, track.Track.StreamID())
 
 					if mid != nil {
 						s.emitFn("track_removed", *mid)

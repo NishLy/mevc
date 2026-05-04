@@ -29,6 +29,7 @@ func forwardTrack(session Session, track *webrtc.TrackRemote) error {
 		track.ID(),
 		track.StreamID(),
 	)
+
 	if err != nil {
 		return err
 	}

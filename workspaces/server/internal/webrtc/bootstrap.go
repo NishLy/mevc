@@ -74,18 +74,20 @@ func MustCreatePeerConnection() *webrtc.PeerConnection {
 
 func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, session Session, conn ws.WebSocketConnection) {
 	session.GetPeerConnection().OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		sessionManager.AddRemoteTrackStream(track.ID(), track)
-		sessionManager.SetOwnerSessionIdForTrack(track.ID(), session.GetClientId())
-		
+		sessionManager.AddRemoteTrackStream(track.StreamID(), track)
+		sessionManager.SetOwnerSessionIdForTrack(track.StreamID(), session.GetClientId())
+
 		var sessionsToBeRenegotiated []Session
+
+		logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", session.GetClientId(), track.StreamID(), track.Kind().String(), sessionManager.GetGroupId())
 
 		for _, otherSession := range sessionManager.GetSessions() {
 			if otherSession.GetClientId() == session.GetClientId() || !otherSession.IsInitialized() {
 				continue
 			}
 
-			otherSession.AddRemoteTrackStream(track.ID(), track)
-			streamedSession := otherSession.StartRTPStream(track.ID(), session.GetClientId())
+			otherSession.AddRemoteTrackStream(track.StreamID(), track)
+			streamedSession := otherSession.StartRTPStream(track.StreamID(), session.GetClientId())
 
 			if streamedSession != nil {
 				sessionsToBeRenegotiated = append(sessionsToBeRenegotiated, streamedSession)
@@ -98,7 +100,7 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 			}
 		}
 
-		logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", session.GetClientId(), track.ID(), track.Kind().String(), sessionManager.GetGroupId())
+		logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", session.GetClientId(), track.StreamID(), track.Kind().String(), sessionManager.GetGroupId())
 	})
 
 	session.GetPeerConnection().OnICECandidate(func(c *webrtc.ICECandidate) {
@@ -163,21 +165,21 @@ func AttachExistingStreams(sessionManager SessionManager, session Session) {
 			continue
 		}
 
-		session.AddRemoteTrackStream(track.Track.ID(), track.Track)
-		session.AddRemoteTrackMeta(track.Track.ID(), *track.Metadata)
-		session.SetOwnerSessionIdForTrack(track.Track.ID(), track.Metadata.clientId)
-		startedSession := session.StartRTPStream(track.Metadata.trackId, track.Metadata.clientId)
+		session.AddRemoteTrackStream(track.Track.StreamID(), track.Track)
+		session.AddRemoteTrackMeta(track.Track.StreamID(), *track.Metadata)
+		session.SetOwnerSessionIdForTrack(track.Track.StreamID(), track.Metadata.clientId)
+		startedSession := session.StartRTPStream(track.Track.StreamID(), track.Metadata.clientId)
 
 		if startedSession != nil {
 			count++
 		}
 	}
 
-	if count > 0 {
-		if err := session.Renegotiate(nil); err != nil {
-			logger.Sugar.Errorf("Failed to renegotiate after attaching existing streams: %v", err)
-		}
+	// if count > 0 {
+	if err := session.Renegotiate(nil); err != nil {
+		logger.Sugar.Errorf("Failed to renegotiate after attaching existing streams: %v", err)
 	}
+	// }
 }
 
 func RegisterHandlers(hub ws.WsHub) {

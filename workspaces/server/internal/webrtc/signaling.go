@@ -154,14 +154,22 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 	}
 
 	trackId := trackMetadatMap["trackId"].(string)
+	streamId := trackMetadatMap["streamId"].(string)
 	kind := trackMetadatMap["kind"].(string)
 	streamGroupId := trackMetadatMap["streamGroupId"].(string)
+	label := ""
+
+	if trackMetadatMap["label"] != nil {
+		label = trackMetadatMap["label"].(string)
+	}
 
 	metadata := SessionTrackMetadata{
 		trackId:       trackId,
 		kind:          kind,
 		streamGroupId: streamGroupId,
 		clientId:      clientID,
+		streamId:      streamId,
+		label:         label,
 	}
 
 	session, exists := sessionManager.GetSession(clientID)
@@ -171,9 +179,9 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
-	session.AddSelfTrackMetadata(trackId, metadata)
-	sessionManager.AddRemoteTrackMeta(trackId, metadata)
-	sessionManager.SetOwnerSessionIdForTrack(trackId, metadata.clientId)
+	session.AddSelfTrackMetadata(streamGroupId, metadata)
+	sessionManager.AddRemoteTrackMeta(streamId, metadata)
+	sessionManager.SetOwnerSessionIdForTrack(streamId, metadata.clientId)
 
 	var sessionsToBeRenegotiated []Session
 	for _, otherSession := range sessionManager.GetSessions() {
@@ -181,8 +189,8 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 			continue
 		}
 
-		otherSession.AddRemoteTrackMeta(trackId, metadata)
-		streamedSession := otherSession.StartRTPStream(trackId, metadata.clientId)
+		otherSession.AddRemoteTrackMeta(streamId, metadata)
+		streamedSession := otherSession.StartRTPStream(metadata.streamId, metadata.clientId)
 
 		if streamedSession != nil {
 			sessionsToBeRenegotiated = append(sessionsToBeRenegotiated, streamedSession)
@@ -195,7 +203,7 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 		}
 	}
 
-	logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", clientID, trackId, kind, streamGroupId)
+	logger.Sugar.Infof("Client %s changed trackMetadata for track %s (kind=%s) in stream group %s", clientID, streamId, kind, streamGroupId)
 }
 
 func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) {
@@ -256,7 +264,7 @@ func HandleRequestMeta(conn ws.WebSocketConnection, data ...any) {
 
 	for _, track := range pc.GetTransceivers() {
 		if track.Mid() == metaMap["transceiverMid"].(string) {
-			sessionTrack, exist := session.GetRemoteTrack(track.Sender().Track().ID())
+			sessionTrack, exist := session.GetRemoteTrack(track.Sender().Track().StreamID())
 
 			if !exist {
 				logger.Sugar.Warnf("No track found for MID %s in session of client %s", track.Mid(), session.GetClientId())
@@ -267,7 +275,9 @@ func HandleRequestMeta(conn ws.WebSocketConnection, data ...any) {
 				"clientId":       sessionTrack.Metadata.clientId,
 				"trackId":        sessionTrack.Metadata.trackId,
 				"kind":           sessionTrack.Metadata.kind,
+				"streamId":       sessionTrack.Metadata.streamId,
 				"streamGroupId":  sessionTrack.Metadata.streamGroupId,
+				"label":          sessionTrack.Metadata.label,
 				"transceiverMid": track.Mid(),
 			})
 		}
@@ -294,15 +304,14 @@ func HandleRemoveTrack(conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
-	session.RemoveSelfTrackMetadata(metadata.trackId)
-
-	sessionManager.RemoveSubscribedTrack(metadata.trackId)
+	session.RemoveSelfTrackMetadata(metadata.streamGroupId)
+	sessionManager.RemoveSubscribedTrack(metadata.streamId)
 	for _, otherSession := range sessionManager.GetSessions() {
 		if otherSession.GetClientId() == session.GetClientId() {
 			continue
 		}
 
-		otherSession.RemoveRemoteTrack(metadata.trackId)
+		otherSession.RemoveRemoteTrack(metadata.streamId)
 
 		if err := otherSession.Renegotiate(nil); err != nil {
 			logger.Sugar.Errorf("Failed to renegotiate for session %s: %v", otherSession.GetClientId(), err)
