@@ -106,11 +106,13 @@ export default function Room({ roomId }: RoomProps) {
     )
 
     webRTCServiceRef.current = webRTCService
-
-    return () => {
-      webRTCService.destroy()
-    }
   }, [roomId, localStreams, roomJoined, wsConnected])
+
+  useEffect(() => {
+    if (!webRTCServiceRef.current) return
+
+    webRTCServiceRef.current.setLocalStreams(localStreams)
+  }, [localStreams])
 
   return (
     <div>

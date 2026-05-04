@@ -63,7 +63,20 @@ export class WebRTCService {
     })
   }
 
+  private bindMethods() {
+    this.init = this.init.bind(this)
+    this.createPeerConnection = this.createPeerConnection.bind(this)
+    this.tryResolve = this.tryResolve.bind(this)
+    this.attachOrUpdate = this.attachOrUpdate.bind(this)
+    this.setLocalStreams = this.setLocalStreams.bind(this)
+    this.sendOffer = this.sendOffer.bind(this)
+    this.emit = this.emit.bind(this)
+    this.destroy = this.destroy.bind(this)
+  }
+
   private async init() {
+    this.bindMethods()
+
     this.createPeerConnection()
 
     // ── Socket side of rendezvous ──────────────────────────────────
@@ -288,23 +301,55 @@ export class WebRTCService {
   async setLocalStreams(newStreams: MediaStreamItem[]) {
     if (!this.peerConnection) throw new Error("Peer connection not initialized")
 
-    for (const newStream of newStreams) {
-      const isAlreadyAdded = this.localStreams.some(
-        (s) => s.id === newStream.id
-      )
-      if (isAlreadyAdded) continue
+    const newStreamsArr = []
+    let hasChanged = false
 
-      newStream.stream.getTracks().forEach((track) => {
+    for (const exist of newStreams) {
+      const isExist = this.localStreams.find((s) => s.id === exist.id)
+
+      if (isExist) {
+        newStreamsArr.push(exist)
+        continue
+      }
+
+      exist.stream.getTracks().forEach((track) => {
         this.emit("track_changed", {
+          clientId: this.clientId,
           trackId: track.id,
           kind: track.kind,
-          streamGroupId: newStream.id,
+          streamGroupId: exist.id,
         })
-        this.peerConnection?.addTrack(track, newStream.stream)
+        this.peerConnection?.addTrack(track, exist.stream)
+      })
+
+      hasChanged = true
+      if (this.options.onAddedRemoteStream) {
+        this.options.onAddedRemoteStream({
+          ...exist,
+          isLocal: true,
+        })
+      }
+    }
+
+    for (const exist of this.localStreams) {
+      const isExist = newStreamsArr.find((s) => s.id === exist.id)
+
+      if (isExist) continue
+
+      hasChanged = true
+      this.emit("track_removed", exist.id)
+      if (this.options.onRemovedRemoteStream) {
+        this.options.onRemovedRemoteStream(exist.id)
+      }
+    }
+
+    if (hasChanged) {
+      this.sendOffer().catch((err) => {
+        console.error("Failed to renegotiate after local stream change:", err)
       })
     }
 
-    this.localStreams = newStreams
+    this.localStreams = newStreamsArr
   }
 
   private async sendOffer() {

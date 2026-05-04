@@ -175,4 +175,5 @@ func RegisterHandlers(hub ws.WsHub) {
 	hub.On("disconnect", func(conn ws.WebSocketConnection, data ...any) {
 		HandleDisconnect(hub, conn, data...)
 	})
+	hub.On("remove_track", HandleRemoveTrack)
 }

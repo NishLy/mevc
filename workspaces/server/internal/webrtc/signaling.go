@@ -253,3 +253,26 @@ func HandleRequestMeta(conn ws.WebSocketConnection, data ...any) {
 	}
 
 }
+
+func HandleRemoveTrack(conn ws.WebSocketConnection, data ...any) {
+	sessionManager := GetGroupManagerFromConn(conn)
+	if sessionManager == nil {
+		return
+	}
+
+	session, exists := sessionManager.GetSessionByWsID(conn.ID())
+	if !exists {
+		return
+	}
+
+	trackId := data[1].(string)
+
+	sessionManager.RemoveSubscribedTrack(trackId)
+	for _, s := range sessionManager.GetSessions() {
+		if s.GetClientId() == session.GetClientId() {
+			continue
+		}
+
+		s.RemoveRemoteTrack(trackId)
+	}
+}

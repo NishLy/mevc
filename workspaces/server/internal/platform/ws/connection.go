@@ -52,6 +52,8 @@ func (w *webSocketConnection) GetGroupId() *string {
 }
 
 func (w *webSocketConnection) Emit(event string, data ...interface{}) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.conn.WriteJSON(map[string]interface{}{
 		"metadata": map[string]interface{}{
 			"id": w.id,
@@ -70,8 +72,6 @@ func (w *webSocketConnection) Close() error {
 }
 
 func (w *webSocketConnection) WriteJSON(v interface{}) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	return w.conn.WriteJSON(v)
 }
 

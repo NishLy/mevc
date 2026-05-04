@@ -307,6 +307,13 @@ func (s *session) AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote
 }
 
 func (s *session) RemoveRemoteTrack(trackId string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	track, exists := s.remoteTracks[trackId]
+	if exists && track.Track != nil {
+		s.removeTrackFromPeerConnection(track.Track.ID())
+	}
 	delete(s.remoteTracks, trackId)
 }
 
