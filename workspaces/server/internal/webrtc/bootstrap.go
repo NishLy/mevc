@@ -113,13 +113,9 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 
 	session.GetPeerConnection().OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		logger.Sugar.Infof("Peer Connection state: %s", state)
-		if state == webrtc.PeerConnectionStateConnected {
-			// session.RunWorker()
-			// BoostrapSession(sessionManager, session)
 
-			// if err := session.Renegotiate(nil); err != nil {
-			// 	logger.Sugar.Errorf("Failed to renegotiate after connection: %v", err)
-			// }
+		if state == webrtc.PeerConnectionStateConnected {
+			AttachExistingStreams(sessionManager, session)
 		}
 
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
@@ -154,6 +150,8 @@ func RemoveFromSessionManager(hub ws.WsHub, sessionManager SessionManager, clien
 }
 
 func AttachExistingStreams(sessionManager SessionManager, session Session) {
+	count := 0
+
 	for _, track := range sessionManager.GetSubscribedTracks() {
 		if track.Metadata == nil || track.Track == nil {
 			continue
@@ -167,6 +165,13 @@ func AttachExistingStreams(sessionManager SessionManager, session Session) {
 		session.AddRemoteTrackMeta(track.Track.ID(), *track.Metadata)
 		session.SetOwnerSessionIdForTrack(track.Track.ID(), track.Metadata.clientId)
 		session.StartRTPStream(track.Metadata.trackId, track.Metadata.clientId)
+		count++
+	}
+
+	if count > 0 {
+		if err := session.Renegotiate(nil); err != nil {
+			logger.Sugar.Errorf("Failed to renegotiate after attaching existing streams: %v", err)
+		}
 	}
 }
 
