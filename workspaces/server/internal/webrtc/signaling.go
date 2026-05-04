@@ -167,13 +167,24 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 	sessionManager.AddRemoteTrackMeta(trackId, metadata)
 	sessionManager.SetOwnerSessionIdForTrack(trackId, metadata.clientId)
 
+	var sessionsToBeRenegotiated []Session
 	for _, otherSession := range sessionManager.GetSessions() {
 		if otherSession.GetClientId() == clientID {
 			continue
 		}
 
 		otherSession.AddRemoteTrackMeta(trackId, metadata)
-		otherSession.TryStream(trackId, metadata.clientId)
+		streamedSession := otherSession.StartRTPStream(trackId, metadata.clientId)
+
+		if streamedSession != nil {
+			sessionsToBeRenegotiated = append(sessionsToBeRenegotiated, streamedSession)
+		}
+	}
+
+	for _, otherSession := range sessionsToBeRenegotiated {
+		if err := otherSession.Renegotiate(nil); err != nil {
+			logger.Sugar.Errorf("Failed to renegotiate for session %s: %v", otherSession.GetClientId(), err)
+		}
 	}
 }
 
@@ -274,5 +285,6 @@ func HandleRemoveTrack(conn ws.WebSocketConnection, data ...any) {
 		}
 
 		otherSession.RemoveRemoteTrack(trackId)
+		go otherSession.Renegotiate(nil)
 	}
 }

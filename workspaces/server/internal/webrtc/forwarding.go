@@ -3,27 +3,9 @@ package rtc
 import (
 	"time"
 
-	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 )
-
-func createLocalTrancieverAndTrack(track *webrtc.TrackRemote, session Session) (*webrtc.RTPTransceiver, *webrtc.TrackLocalStaticRTP, error) {
-	pc := session.GetPeerConnection()
-
-	localTrack, err := webrtc.NewTrackLocalStaticRTP(
-		track.Codec().RTPCodecCapability,
-		track.ID(),
-		track.StreamID(),
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	transceiver, err := pc.AddTransceiverFromTrack(localTrack)
-
-	return transceiver, localTrack, err
-}
 
 func check(sender *webrtc.RTPSender, track *webrtc.TrackRemote) uint8 {
 	params := sender.GetParameters()
@@ -39,9 +21,25 @@ func check(sender *webrtc.RTPSender, track *webrtc.TrackRemote) uint8 {
 	return targetPT
 }
 
-func forwardTrack(pc *webrtc.PeerConnection, transceiver *webrtc.RTPTransceiver, track *webrtc.TrackRemote, localTrack *webrtc.TrackLocalStaticRTP, clientID string) error {
-	logger.Sugar.Infof("Starting to forward track for client %s: SSRC=%d, PT=%d, Seq=%d", clientID, track.SSRC(), track.PayloadType(), 0)
+func forwardTrack(session Session, track *webrtc.TrackRemote) error {
+	pc := session.GetPeerConnection()
 
+	localTrack, err := webrtc.NewTrackLocalStaticRTP(
+		track.Codec().RTPCodecCapability,
+		track.ID(),
+		track.StreamID(),
+	)
+	if err != nil {
+		return err
+	}
+
+	transceiver, err := pc.AddTransceiverFromTrack(localTrack)
+
+	if err != nil {
+		return err
+	}
+
+	// Start a goroutine to read RTP packets from the remote track and write them to the local track
 	go func() {
 		pli := []rtcp.Packet{
 			&rtcp.PictureLossIndication{
