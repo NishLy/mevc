@@ -164,7 +164,8 @@ export class MediaStreamController {
     }
   }
 
-  private removeLocalStream(id = LOCAL_STREAM_CONSTANT) {
+  private removeLocalStream(type = LOCAL_STREAM_CONSTANT, stream: MediaStream) {
+    const id = this.id + "_" + type
     this.localStreams = this.localStreams.filter((s) => s.id !== id)
     if (this.onLocalStreamUpdateCallback) {
       this.onLocalStreamUpdateCallback(this.localStreams)
@@ -330,10 +331,13 @@ export class MediaStreamController {
 
   stopScreenShare() {
     if (this.currentScreenShareStream) {
-      this.stopMediaStream(this.currentScreenShareStream)
       if (this.currentScreenShareStream) {
+        this.removeLocalStream(
+          LOCAL_SCREEN_SHARE_STREAM_CONSTRAINT,
+          this.currentScreenShareStream
+        )
+        this.stopMediaStream(this.currentScreenShareStream)
         this.currentScreenShareStream = null
-        this.removeLocalStream(LOCAL_SCREEN_SHARE_STREAM_CONSTRAINT)
       }
     }
 

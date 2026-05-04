@@ -309,8 +309,13 @@ export class WebRTCService {
     let hasChanged = false
     const newStreamsMap = new Map<string, MediaStreamItem>()
 
-    for (const stream of this.localStreams.values()) {
-      if (newStreamsIds.has(stream.id)) newStreamsMap.set(stream.id, stream)
+    for (const stream of Array.from(this.localStreams.values()).concat(
+      newStreams
+    )) {
+      if (newStreamsIds.has(stream.id)) {
+        newStreamsMap.set(stream.id, stream)
+        continue
+      }
 
       hasChanged = true
       this.emit("track_removed", stream.id)
@@ -320,7 +325,7 @@ export class WebRTCService {
       }
     }
 
-    for (const stream of newStreamsMap.values()) {
+    for (const stream of Array.from(newStreamsMap.values())) {
       if (!this.localStreams.has(stream.id)) {
         hasChanged = true
 
