@@ -38,15 +38,24 @@ export default function VideosGrid() {
     <>
       <div
         className={classNames(
-          "content-center gap-2 overflow-y-auto p-2",
+          "mx-auto content-center gap-10 p-2",
           calculateGridColumns(unpinnedStreams.length),
-          pinnedStreams.length > 0 &&
-            "fixed top-0 left-0 z-10 grid h-44 w-fit justify-items-start overflow-x-auto overflow-y-hidden bg-transparent backdrop-blur-sm",
-          pinnedStreams.length === 0 && "grid h-screen w-full rounded-lg p-4"
+          pinnedStreams.length > 0
+            ? "fixed top-0 left-0 z-10 h-56 w-fit justify-items-start overflow-x-auto overflow-y-hidden bg-transparent"
+            : "box-border grid h-screen w-full flex-wrap justify-center justify-items-center overflow-hidden rounded-lg"
         )}
       >
         {unpinnedStreams.map((s) => (
-          <VideoTile key={s.id} {...s} />
+          <div
+            key={s.id}
+            className={classNames(
+              "relative h-full w-full max-w-10/12",
+              pinnedStreams.length > 0 &&
+                "max-h-44 max-w-xs opacity-70 hover:opacity-100"
+            )}
+          >
+            <VideoTile {...s} />
+          </div>
         ))}
       </div>
 
@@ -59,7 +68,12 @@ export default function VideosGrid() {
           )}
         >
           {pinnedStreams.map((s) => (
-            <VideoTile key={s.id} {...s} />
+            <div
+              key={s.id}
+              className={classNames("relative h-full w-full max-w-10/12")}
+            >
+              <VideoTile key={s.id} {...s} />
+            </div>
           ))}
         </div>
       )}
