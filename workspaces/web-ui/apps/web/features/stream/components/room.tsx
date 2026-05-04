@@ -8,6 +8,7 @@ import useMeet from "../state/meet"
 import { WebRTCService } from "../services/rtc"
 import WSservice from "@/lib/ws"
 import { MediaStreamItem } from "../types/service"
+import ChatTabs from "./chat"
 
 interface RoomProps {
   roomId: string
@@ -119,6 +120,7 @@ export default function Room({ roomId }: RoomProps) {
   return (
     <div className="mx-auto flex h-screen w-full items-center justify-center">
       <VideosGrid />
+      <ChatTabs />
       <ControlBar />
     </div>
   )
