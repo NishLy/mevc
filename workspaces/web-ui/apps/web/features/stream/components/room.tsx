@@ -13,7 +13,9 @@ interface RoomProps {
   roomId: string
 }
 
-const dummyClientId = crypto.randomUUID()
+const dummyClientId =
+  window.location.search.split("client_id=")[1] ||
+  "client_" + Math.random().toString(36).substr(2, 9)
 console.log("Generated dummy client ID:", dummyClientId)
 
 export default function Room({ roomId }: RoomProps) {

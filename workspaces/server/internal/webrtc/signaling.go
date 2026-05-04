@@ -46,8 +46,8 @@ func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 		conn.Emit(event, args...)
 	})
 
-	// BoostrapSession(sessionManager, session)
-	RegisterPCCallbacks(hub, sessionManager, session, conn)
+	// AttachExistingStreams(sessionManager, session)
+	RegisterSessionPCListeners(hub, sessionManager, session, conn)
 
 	sessionManager.AddSession(session, conn.ID())
 
@@ -167,13 +167,13 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 	sessionManager.AddRemoteTrackMeta(trackId, metadata)
 	sessionManager.SetOwnerSessionIdForTrack(trackId, metadata.clientId)
 
-	for _, s := range sessionManager.GetSessions() {
-		if s.GetClientId() == clientID {
+	for _, otherSession := range sessionManager.GetSessions() {
+		if otherSession.GetClientId() == clientID {
 			continue
 		}
 
-		s.AddRemoteTrackMeta(trackId, metadata)
-		s.HandleStreamForwarding(trackId, metadata.clientId)
+		otherSession.AddRemoteTrackMeta(trackId, metadata)
+		otherSession.TryStream(trackId, metadata.clientId)
 	}
 }
 
@@ -268,11 +268,11 @@ func HandleRemoveTrack(conn ws.WebSocketConnection, data ...any) {
 	trackId := data[1].(string)
 
 	sessionManager.RemoveSubscribedTrack(trackId)
-	for _, s := range sessionManager.GetSessions() {
-		if s.GetClientId() == session.GetClientId() {
+	for _, otherSession := range sessionManager.GetSessions() {
+		if otherSession.GetClientId() == session.GetClientId() {
 			continue
 		}
 
-		s.RemoveRemoteTrack(trackId)
+		otherSession.RemoveRemoteTrack(trackId)
 	}
 }

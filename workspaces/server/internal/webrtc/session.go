@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"sync"
+	"time"
 
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/pion/webrtc/v4"
@@ -45,7 +46,7 @@ type Session interface {
 	AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote)
 	RemoveRemoteTrack(trackId string)
 
-	HandleStreamForwarding(trackID string, clientID string)
+	TryStream(trackID string, clientID string)
 
 	SetSubscribedTrack(trackId string, subscribed bool)
 	SetOwnerSessionIdForTrack(trackId string, sessionId string)
@@ -140,6 +141,13 @@ func (s *session) Renegotiate(attempt *int) error {
 	}
 
 	emitFn("new_offer", s.clientId, offer)
+
+	defer func() {
+		time.Sleep(5 * time.Second)
+
+		<-s.offerWaitChan
+	}()
+
 	return nil
 }
 
@@ -156,10 +164,12 @@ func (s *session) removeTrackFromPeerConnection(trackID string) {
 		if transceiver.Sender().Track().ID() == trackID {
 			s.pc.RemoveTrack(transceiver.Sender())
 
-			if err := s.Renegotiate(nil); err != nil {
-				logger.Sugar.Errorf("Error renegotiating after removing track %s for session %s: %v", trackID, s.clientId, err)
-			}
+			s.emitFn("track_removed", transceiver.Mid())
 		}
+	}
+
+	if err := s.Renegotiate(nil); err != nil {
+		logger.Sugar.Errorf("Error renegotiating after removing track %s for session %s: %v", trackID, s.clientId, err)
 	}
 }
 
@@ -195,7 +205,11 @@ func (s *session) SetSubscribedTrack(trackId string, subscribed bool) {
 	}
 }
 
-func (s *session) HandleStreamForwarding(trackID string, clientID string) {
+func (s *session) TryStream(trackID string, clientID string) {
+	if s.clientId == clientID {
+		return
+	}
+
 	s.mu.Lock()
 	track, exists := s.remoteTracks[trackID]
 	s.mu.Unlock()
@@ -223,6 +237,7 @@ func (s *session) HandleStreamForwarding(trackID string, clientID string) {
 	}
 
 	err = forwardTrack(s.pc, transceiver, track.Track, localTrack, s.clientId)
+
 	if err != nil {
 		logger.Sugar.Errorf("Error forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
 		return

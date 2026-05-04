@@ -72,18 +72,18 @@ func MustCreatePeerConnection() *webrtc.PeerConnection {
 	return pc
 }
 
-func RegisterPCCallbacks(hub ws.WsHub, sessionManager SessionManager, session Session, conn ws.WebSocketConnection) {
+func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, session Session, conn ws.WebSocketConnection) {
 	session.GetPeerConnection().OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		sessionManager.AddRemoteTrackStream(track.ID(), track)
 		sessionManager.SetOwnerSessionIdForTrack(track.ID(), session.GetClientId())
 
-		for _, s := range sessionManager.GetSessions() {
-			if s.GetClientId() == session.GetClientId() || !s.IsInitialized() {
+		for _, otherSession := range sessionManager.GetSessions() {
+			if otherSession.GetClientId() == session.GetClientId() || !otherSession.IsInitialized() {
 				continue
 			}
 
-			s.AddRemoteTrackStream(track.ID(), track)
-			s.HandleStreamForwarding(track.ID(), s.GetClientId())
+			otherSession.AddRemoteTrackStream(track.ID(), track)
+			otherSession.TryStream(track.ID(), session.GetClientId())
 		}
 	})
 
@@ -102,8 +102,12 @@ func RegisterPCCallbacks(hub ws.WsHub, sessionManager SessionManager, session Se
 	session.GetPeerConnection().OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		logger.Sugar.Infof("Peer Connection state: %s", state)
 		if state == webrtc.PeerConnectionStateConnected {
-			session.RunWorker()
-			BoostrapSession(sessionManager, session)
+			// session.RunWorker()
+			// BoostrapSession(sessionManager, session)
+
+			// if err := session.Renegotiate(nil); err != nil {
+			// 	logger.Sugar.Errorf("Failed to renegotiate after connection: %v", err)
+			// }
 		}
 
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
@@ -137,7 +141,7 @@ func RemoveFromSessionManager(hub ws.WsHub, sessionManager SessionManager, clien
 	hub.EmitTo(sessionManager.GetGroupId(), "peer_left", nil, clientID)
 }
 
-func BoostrapSession(sessionManager SessionManager, session Session) {
+func AttachExistingStreams(sessionManager SessionManager, session Session) {
 	for _, track := range sessionManager.GetSubscribedTracks() {
 		if track.Metadata == nil || track.Track == nil {
 			continue
@@ -150,7 +154,7 @@ func BoostrapSession(sessionManager SessionManager, session Session) {
 		session.AddRemoteTrackStream(track.Track.ID(), track.Track)
 		session.AddRemoteTrackMeta(track.Track.ID(), *track.Metadata)
 		session.SetOwnerSessionIdForTrack(track.Track.ID(), track.Metadata.clientId)
-		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId)
+		session.TryStream(track.Metadata.trackId, track.Metadata.clientId)
 	}
 }
 

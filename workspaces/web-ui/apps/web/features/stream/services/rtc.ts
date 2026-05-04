@@ -31,6 +31,7 @@ export class WebRTCService {
   private pending: Map<string, PendingEntry> = new Map()
   private pendingInterval: NodeJS.Timeout | null = null
   private ownTrackIds: Set<string> = new Set()
+  private mapMidToStreamGroupId: Map<string, string> = new Map()
 
   // streamGroupId → { clientId, tracks: Map<kind, track> }
   private resolvedStreams: Map<
@@ -80,12 +81,8 @@ export class WebRTCService {
 
   private async init() {
     this.bindMethods()
-
     this.createPeerConnection()
 
-    // ── Socket side of rendezvous ──────────────────────────────────
-    // Fired by server when a publisher's track is being forwarded to us.
-    // May arrive before or after ontrack.
     this.wsService?.on("new_track", (clientId: string, meta: TrackMeta) => {
       if (this.clientId === clientId) {
         this.ownTrackIds.add(meta.trackId)
@@ -110,9 +107,8 @@ export class WebRTCService {
     })
 
     this.wsService?.on("peer_left", (clientId: string) => {
-      console.log("Disconnecting streams for client:", clientId)
       const clientsStreamsGroupId = Array.from(this.resolvedStreams.entries())
-        .filter(([_, value]) => value.clientId === clientId)
+        .filter(([, value]) => value.clientId === clientId)
         .map(([key]) => key)
 
       for (const streamGroupId of clientsStreamsGroupId) {
@@ -121,9 +117,6 @@ export class WebRTCService {
       }
     })
 
-    // Server-driven renegotiation: after forwardTrack → ReplaceTrack the server
-    // sends a new offer whose MSID contains the publisher's real track ID.
-    // Answering causes the browser to fire ontrack with the matching ID.
     this.wsService?.on(
       "new_offer",
       async (_clientId: string, offer: RTCSessionDescriptionInit) => {
@@ -149,6 +142,16 @@ export class WebRTCService {
       }
     )
 
+    this.wsService?.on("track_removed", (mid: string) => {
+      const streamGroupId = this.mapMidToStreamGroupId.get(mid) ?? ""
+      const resolved = this.resolvedStreams.get(streamGroupId)
+
+      if (resolved) {
+        this.resolvedStreams.delete(streamGroupId)
+        this.options.onRemovedRemoteStream?.(streamGroupId)
+      }
+    })
+
     // Emit track metadata before sending offer so server
     // has it ready when new_track fires on subscribers
     this.localStreams.forEach((streamItem) => {
@@ -159,12 +162,6 @@ export class WebRTCService {
           kind: track.kind,
           streamGroupId: streamItem.id,
         })
-        console.warn(
-          "Emitting track_changed for track ID:",
-          track.id,
-          "kind:",
-          track.kind
-        )
       })
     })
 
@@ -237,6 +234,8 @@ export class WebRTCService {
     const { clientId, streamGroupId, kind } = entry.meta
     const track = entry.track
 
+    this.mapMidToStreamGroupId.set(mid, streamGroupId)
+
     if (!this.resolvedStreams.has(streamGroupId)) {
       this.resolvedStreams.set(streamGroupId, {
         clientId,
@@ -284,22 +283,6 @@ export class WebRTCService {
     pc.getReceivers().forEach((r) => {
       console.log(r.track?.kind, r.getParameters().codecs)
     })
-
-    this.intervalId = setInterval(async () => {
-      const stats = await pc.getStats()
-
-      stats.forEach((report) => {
-        if (report.type === "inbound-rtp" && report.kind === "video") {
-          const codec = stats.get(report.codecId)
-
-          console.log("Codec:", codec?.mimeType)
-          console.log("PayloadType:", codec?.payloadType)
-
-          console.log("bytesReceived:", report.bytesReceived)
-          console.log("framesDecoded:", report.framesDecoded)
-        }
-      })
-    }, 1000)
   }
 
   async setLocalStreams(newStreams: MediaStreamItem[]) {
@@ -356,7 +339,7 @@ export class WebRTCService {
     this.emit("send_offer", offer)
   }
 
-  private emit(eventName: string, data: any) {
+  private emit(eventName: string, data: unknown) {
     if (!this.wsService || !this.roomId) {
       throw new Error("Socket or room ID not initialized")
     }
