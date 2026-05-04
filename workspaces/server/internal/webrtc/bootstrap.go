@@ -83,7 +83,7 @@ func RegisterPCCallbacks(hub ws.WsHub, sessionManager SessionManager, session Se
 			}
 
 			s.AddRemoteTrackStream(track.ID(), track)
-			s.HandleStreamForwarding(track.ID(), s.GetClientId(), false)
+			s.HandleStreamForwarding(track.ID(), s.GetClientId())
 		}
 	})
 
@@ -103,6 +103,7 @@ func RegisterPCCallbacks(hub ws.WsHub, sessionManager SessionManager, session Se
 		logger.Sugar.Infof("Peer Connection state: %s", state)
 		if state == webrtc.PeerConnectionStateConnected {
 			session.RunWorker()
+			BoostrapSession(sessionManager, session)
 		}
 
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
@@ -149,7 +150,7 @@ func BoostrapSession(sessionManager SessionManager, session Session) {
 		session.AddRemoteTrackStream(track.Track.ID(), track.Track)
 		session.AddRemoteTrackMeta(track.Track.ID(), *track.Metadata)
 		session.SetOwnerSessionIdForTrack(track.Track.ID(), track.Metadata.clientId)
-		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId, true)
+		session.HandleStreamForwarding(track.Metadata.trackId, track.Metadata.clientId)
 	}
 }
 

@@ -46,7 +46,7 @@ func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 		conn.Emit(event, args...)
 	})
 
-	BoostrapSession(sessionManager, session)
+	// BoostrapSession(sessionManager, session)
 	RegisterPCCallbacks(hub, sessionManager, session, conn)
 
 	sessionManager.AddSession(session, conn.ID())
@@ -173,7 +173,7 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 		}
 
 		s.AddRemoteTrackMeta(trackId, metadata)
-		s.HandleStreamForwarding(trackId, metadata.clientId, false)
+		s.HandleStreamForwarding(trackId, metadata.clientId)
 	}
 }
 

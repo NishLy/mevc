@@ -23,7 +23,7 @@ interface PendingEntry {
 export class WebRTCService {
   private peerConnection: RTCPeerConnection | null = null
   private wsService: WSservice | null = null
-  private localStreams: MediaStreamItem[] = []
+  private localStreams: Map<string, MediaStreamItem> = new Map()
   private roomId: string = ""
 
   // Rendezvous map: trackId → { meta?, track? }
@@ -55,7 +55,11 @@ export class WebRTCService {
   ) {
     this.roomId = roomId
     this.wsService = wsService
-    this.localStreams = localStreams
+
+    localStreams.forEach((stream) => {
+      this.localStreams.set(stream.id, stream)
+    })
+
     if (options) this.options = options
 
     this.init().catch((err) => {
@@ -301,45 +305,33 @@ export class WebRTCService {
   async setLocalStreams(newStreams: MediaStreamItem[]) {
     if (!this.peerConnection) throw new Error("Peer connection not initialized")
 
-    const newStreamsArr = []
+    const newStreamsIds = new Set(newStreams.map((s) => s.id))
     let hasChanged = false
+    const newStreamsMap = new Map<string, MediaStreamItem>()
 
-    for (const exist of newStreams) {
-      const isExist = this.localStreams.find((s) => s.id === exist.id)
-
-      if (isExist) {
-        newStreamsArr.push(exist)
-        continue
-      }
-
-      exist.stream.getTracks().forEach((track) => {
-        this.emit("track_changed", {
-          clientId: this.clientId,
-          trackId: track.id,
-          kind: track.kind,
-          streamGroupId: exist.id,
-        })
-        this.peerConnection?.addTrack(track, exist.stream)
-      })
+    for (const stream of this.localStreams.values()) {
+      if (newStreamsIds.has(stream.id)) newStreamsMap.set(stream.id, stream)
 
       hasChanged = true
-      if (this.options.onAddedRemoteStream) {
-        this.options.onAddedRemoteStream({
-          ...exist,
-          isLocal: true,
-        })
+      this.emit("track_removed", stream.id)
+
+      if (this.options.onRemovedRemoteStream) {
+        this.options.onRemovedRemoteStream(stream.id)
       }
     }
 
-    for (const exist of this.localStreams) {
-      const isExist = newStreamsArr.find((s) => s.id === exist.id)
+    for (const stream of newStreamsMap.values()) {
+      if (!this.localStreams.has(stream.id)) {
+        hasChanged = true
 
-      if (isExist) continue
-
-      hasChanged = true
-      this.emit("track_removed", exist.id)
-      if (this.options.onRemovedRemoteStream) {
-        this.options.onRemovedRemoteStream(exist.id)
+        stream.stream.getTracks().forEach((track) => {
+          this.peerConnection?.addTrack(track, stream.stream)
+          this.emit("track_changed", {
+            trackId: track.id,
+            kind: track.kind,
+            streamGroupId: stream.id,
+          })
+        })
       }
     }
 
@@ -349,7 +341,7 @@ export class WebRTCService {
       })
     }
 
-    this.localStreams = newStreamsArr
+    this.localStreams = newStreamsMap
   }
 
   private async sendOffer() {
