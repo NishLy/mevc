@@ -12,7 +12,7 @@ interface WSserviceProps {
   options?: {
     reconnectInterval?: number
     reconnectAttempts?: number
-    reconnectOnClose?: boolean
+    reconnect?: boolean
     autoConnect?: boolean
     listeners?: {
       [eventName: string]: (...data: any[]) => void
@@ -23,7 +23,7 @@ interface WSserviceProps {
 class WSservice {
   private reconnectInterval: number = 2000
   private reconnectAttempts: number = Infinity
-  private reconnectOnClose: boolean = true
+  private reconnect: boolean = true
 
   private url: string
   private ws: WebSocket | null = null
@@ -56,8 +56,8 @@ class WSservice {
       this.reconnectAttempts = options.reconnectAttempts
     }
 
-    if (options?.reconnectOnClose !== undefined) {
-      this.reconnectOnClose = options.reconnectOnClose
+    if (options?.reconnect !== undefined) {
+      this.reconnect = options.reconnect
     }
   }
 
@@ -87,21 +87,44 @@ class WSservice {
     }
 
     this.ws.onclose = () => {
-      if (this.reconnectOnClose && this.reconnectAttempts > 0) {
+      if (this.reconnect && this.reconnectAttempts > 0) {
         this.reconnectAttempts--
         setTimeout(() => this.connect(), this.reconnectInterval)
       } else {
+        this.connected = false
+        const handlers = this.listeners.get("disconnect")
+
+        if (handlers) {
+          for (const handler of handlers) {
+            handler()
+          }
+        }
+
+        // dont close the connection if we are set to reconnect, just mark it as disconnected and wait for the reconnect logic to kick in
+        if (this.reconnect) {
+          return
+        }
+
         this.ws = null
         this.connected = false
+        this.listeners.clear()
       }
     }
   }
 
-  emit(eventName: string, ...data: any[]) {
-    this.ws?.send(JSON.stringify({ event: eventName, data }))
+  emit(eventName: string, ...data: unknown[]) {
+    if (!this.connected || this.ws?.readyState !== WebSocket.OPEN) {
+      return
+    }
+
+    try {
+      this.ws.send(JSON.stringify({ event: eventName, data }))
+    } catch (error) {
+      console.error("Failed to send WebSocket message:", error)
+    }
   }
 
-  on(eventName: string, callback: (...data: any[]) => void) {
+  on(eventName: string, callback: (...data: unknown[]) => void) {
     const handlers = this.listeners.get(eventName) || []
     handlers.push(callback)
     this.listeners.set(eventName, handlers)
@@ -112,7 +135,7 @@ class WSservice {
   }
 
   close() {
-    this.reconnectOnClose = false
+    this.reconnect = false
     this.ws?.close()
     this.listeners.clear()
   }

@@ -3,8 +3,9 @@ import { MediaStreamItem } from "../types/service"
 import { createBlackVideoTrack } from "./local"
 
 interface WebRTCServiceProps {
-  onAddedRemoteStream: (stream: MediaStreamItem) => void
+  onAddedRemoteStream?: (stream: MediaStreamItem) => void
   onRemovedRemoteStream?: (streamId: string) => void
+  onPeerStatusChanged?: (status: string) => void
 }
 
 interface TrackMeta {
@@ -48,6 +49,7 @@ export class WebRTCService {
   private options: WebRTCServiceProps = {
     onAddedRemoteStream: () => {},
     onRemovedRemoteStream: () => {},
+    onPeerStatusChanged: (status: string) => {},
   }
 
   constructor(
@@ -264,6 +266,12 @@ export class WebRTCService {
         this.emit("ice_connected", this.roomId)
       }
     }
+
+    this.peerConnection.oniceconnectionstatechange = () => {
+      this.options.onPeerStatusChanged?.(
+        this.peerConnection?.iceConnectionState ?? "unknown"
+      )
+    }
   }
 
   // Called from both sides — only acts when both meta + track are present
@@ -310,7 +318,7 @@ export class WebRTCService {
       }
     }
 
-    this.options.onAddedRemoteStream({
+    this.options.onAddedRemoteStream?.({
       id: streamGroupId,
       stream: ms,
       type: "camera",

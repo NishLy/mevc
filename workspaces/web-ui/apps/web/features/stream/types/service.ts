@@ -21,3 +21,14 @@ export interface MediaStreamOptions {
   useAnyAvailableAudio?: boolean
   autoStartStream?: boolean
 }
+
+export enum MeetConnectionState {
+  New = "new",
+  Checking = "checking",
+  SessionCreated = "session_created",
+  Connected = "connected",
+  Completed = "completed",
+  Disconnected = "disconnected",
+  Unknown = "unknown",
+  Reconnecting = "reconnecting",
+}

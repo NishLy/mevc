@@ -122,7 +122,7 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 			})
 		}
 
-		logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", session.GetClientId(), track.StreamID(), track.Kind().String(), router.metadata.streamGroupId)
+		logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", session.GetClientId(), track.StreamID(), track.Kind().String(), router.metadata)
 	})
 
 	session.GetPeerConnection().OnICECandidate(func(c *webrtc.ICECandidate) {

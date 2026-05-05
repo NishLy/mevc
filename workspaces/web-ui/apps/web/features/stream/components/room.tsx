@@ -2,13 +2,17 @@
 
 import ControlBar from "@/features/stream/components/control_bar"
 import VideosGrid from "@/features/stream/components/video_grid"
-import { useEffect, useRef, useState } from "react"
+import { use, useEffect, useRef, useState } from "react"
 import { MediaStreamController } from "../services/local"
 import useMeet from "../state/meet"
 import { WebRTCService } from "../services/rtc"
 import WSservice from "@/lib/ws"
-import { MediaStreamItem } from "../types/service"
+import { MediaStreamItem, MeetConnectionState } from "../types/service"
 import ChatTabs from "./chat"
+import JoiningVariant from "./loadings/join"
+import ReconnectingVariant from "./loadings/rejoin"
+import MeetClosedVariant from "./loadings/closed"
+import { disconnect } from "node:cluster"
 
 interface RoomProps {
   roomId: string
@@ -17,52 +21,109 @@ interface RoomProps {
 const dummyClientId =
   window.location.search.split("client_id=")[1] ||
   "client_" + Math.random().toString(36).substr(2, 9)
+
 console.log("Generated dummy client ID:", dummyClientId)
 
+const RenderLoading = (status: MeetConnectionState) => {
+  if (
+    [
+      MeetConnectionState.New,
+      MeetConnectionState.Checking,
+      MeetConnectionState.SessionCreated,
+    ].includes(status)
+  ) {
+    return <JoiningVariant />
+  }
+
+  if (
+    [
+      MeetConnectionState.Disconnected,
+      MeetConnectionState.Reconnecting,
+    ].includes(status)
+  ) {
+    return <ReconnectingVariant />
+  }
+
+  if (
+    [MeetConnectionState.Completed, MeetConnectionState.Unknown].includes(
+      status
+    )
+  ) {
+    return <MeetClosedVariant />
+  }
+
+  return null
+}
+
 export default function Room({ roomId }: RoomProps) {
-  const localControllerRef = useRef<MediaStreamController | null>(null)
-  const webRTCServiceRef = useRef<WebRTCService | null>(null)
-  const wsocketService = useRef<WSservice | null>(null)
-  const [wsConnected, setWsConnected] = useState(false)
-  const [roomJoined, setRoomJoined] = useState(false)
-  const { localStreams } = useMeet()
+  const [hasDisconnected, setHasDisconnected] = useState(false)
+
+  const {
+    localStreams,
+    status,
+    RTCService,
+    ws,
+    setCurrentStatus,
+    setController,
+    setWSservice,
+    setRoomID,
+    setRTCService,
+  } = useMeet()
+
+  console.log("Room component rendered with status:", status)
 
   useEffect(() => {
-    wsocketService.current = new WSservice({
+    const ws = new WSservice({
       url: "ws://localhost:8000/ws?tenant_id=123",
       options: {
+        reconnect: true, // to make sure it tries to reconnect on disconnection
         autoConnect: true,
         listeners: {
           connect: () => {
-            wsocketService.current?.emit("join_room", dummyClientId, roomId)
-            useMeet.setState({ roomId })
-            setWsConnected(true)
+            console.log(
+              "WebSocket connected, emitting join_room with clientId:",
+              dummyClientId,
+              "and roomId:",
+              roomId
+            )
+            ws.emit("join_room", dummyClientId, roomId)
           },
           joined_room: (joinedRoomId: string) => {
             if (joinedRoomId === roomId) {
-              setRoomJoined(true)
+              setRoomID(roomId)
+
+              setCurrentStatus(MeetConnectionState.SessionCreated)
             }
+          },
+          disconnect: () => {
+            setCurrentStatus(MeetConnectionState.Disconnected)
+            setRTCService(null)
           },
         },
       },
     })
 
     const localMediaController = new MediaStreamController(dummyClientId)
-    localControllerRef.current = localMediaController
-    useMeet.getState().setController(localMediaController)
+    setController(localMediaController)
+    setWSservice(ws)
 
     return () => {
       localMediaController.destroy()
+      ws.close()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    if (localStreams.length === 0 || !wsConnected || !roomJoined) {
+    if (
+      localStreams.length === 0 ||
+      status !== MeetConnectionState.SessionCreated ||
+      !ws
+    ) {
       return
     }
 
-    if (webRTCServiceRef.current) {
+    if (RTCService) {
       console.warn(
         "WebRTC service already initialized. Skipping re-initialization."
       )
@@ -72,7 +133,7 @@ export default function Room({ roomId }: RoomProps) {
     const webRTCService = new WebRTCService(
       dummyClientId,
       roomId,
-      wsocketService.current!,
+      ws,
       localStreams,
       {
         onAddedRemoteStream: (streamItem) => {
@@ -105,23 +166,60 @@ export default function Room({ roomId }: RoomProps) {
             .remoteStreams.filter((s) => s.id !== streamGroupId)
           useMeet.setState({ remoteStreams: newRemoteStreams })
         },
+        onPeerStatusChanged: (peerStatus) => {
+          if (peerStatus === "disconnected" || peerStatus === "failed") {
+            webRTCService.destroy()
+            setRTCService(null)
+
+            console.warn(
+              "Peer connection lost. Status:",
+              peerStatus,
+              useMeet.getState().status
+            )
+
+            if (useMeet.getState().status === MeetConnectionState.Connected) {
+              setCurrentStatus(MeetConnectionState.Disconnected)
+            }
+          }
+          if (peerStatus === "connected") {
+            setCurrentStatus(MeetConnectionState.Connected)
+          }
+
+          console.log("Peer connection status changed:", peerStatus)
+        },
       }
     )
 
-    webRTCServiceRef.current = webRTCService
-  }, [roomId, localStreams, roomJoined, wsConnected])
+    setRTCService(webRTCService)
+  }, [
+    roomId,
+    localStreams,
+    ws,
+    RTCService,
+    setRTCService,
+    setCurrentStatus,
+    status,
+  ])
 
   useEffect(() => {
-    if (!webRTCServiceRef.current) return
+    if (!RTCService || status !== MeetConnectionState.Connected) return
 
-    webRTCServiceRef.current.setLocalStreams(localStreams)
-  }, [localStreams])
+    RTCService.setLocalStreams(localStreams)
+  }, [localStreams, RTCService, status])
 
   return (
-    <div className="mx-auto flex h-screen w-full items-center justify-center">
-      <VideosGrid />
-      <ChatTabs />
-      <ControlBar />
-    </div>
+    <>
+      <div className="mx-auto flex h-screen w-full items-center justify-center">
+        {RenderLoading(status)}
+
+        {status === MeetConnectionState.Connected && (
+          <>
+            <VideosGrid />
+            <ChatTabs />
+            <ControlBar />
+          </>
+        )}
+      </div>
+    </>
   )
 }
