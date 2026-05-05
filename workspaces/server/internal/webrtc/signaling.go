@@ -143,7 +143,7 @@ func HandleIceCandidate(conn ws.WebSocketConnection, data ...any) {
 	Must(session.GetPeerConnection().AddICECandidate(candidate))
 }
 
-func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
+func handleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	sessionManager := GetGroupManagerFromConn(conn)
 	if sessionManager == nil {
 		return
@@ -183,7 +183,7 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
-	router, exist := sessionManager.GetRouter(streamId)
+	_, exist := sessionManager.GetRouter(streamId)
 
 	if !exist {
 		newRouter := NewTrackRouter(session.GetPeerConnection(), clientID)
@@ -196,16 +196,14 @@ func handleTrackChanged(conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
-	for _, viewer := range router.viewers {
-		viewer.session.Emit("new_track", streamId, map[string]interface{}{
-			"trackId":       trackId,
-			"streamId":      streamId,
-			"kind":          kind,
-			"clientId":      clientID,
-			"streamGroupId": streamGroupId,
-			"label":         label,
-		})
-	}
+	hub.EmitTo(sessionManager.GetGroupId(), "new_track", &conn, session.GetClientId(), map[string]interface{}{
+		"trackId":       trackId,
+		"streamId":      streamId,
+		"kind":          kind,
+		"clientId":      clientID,
+		"streamGroupId": streamGroupId,
+		"label":         label,
+	})
 }
 
 func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) {

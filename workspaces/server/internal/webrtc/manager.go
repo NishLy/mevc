@@ -127,8 +127,8 @@ func (sm *sessionManager) SubscribeToExistingTracks(newSession Session) {
 					"trackId":       router.incomingTrack.ID(),
 					"streamId":      router.incomingTrack.StreamID(),
 					"kind":          router.incomingTrack.Kind().String(),
-					"clientId":      newSession.GetClientId(),
-					"streamGroupId": sm.GetGroupId(),
+					"clientId":      router.publisherID,
+					"streamGroupId": router.metadata.streamGroupId,
 					"label":         router.metadata.label,
 				})
 			}

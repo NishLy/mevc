@@ -111,20 +111,20 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 				logger.Sugar.Errorf("Failed to renegotiate for session %s: %v", otherSession.GetClientId(), err)
 				continue
 			}
-
-			if router.metadata != nil {
-				otherSession.Emit("new_track", track.StreamID(), map[string]interface{}{
-					"trackId":       track.ID(),
-					"streamId":      track.StreamID(),
-					"kind":          track.Kind().String(),
-					"clientId":      session.GetClientId(),
-					"streamGroupId": sessionManager.GetGroupId(),
-					"label":         router.metadata.label,
-				})
-			}
 		}
 
-		logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", session.GetClientId(), track.StreamID(), track.Kind().String(), sessionManager.GetGroupId())
+		if router.hasStarted && router.metadata != nil {
+			hub.EmitTo(sessionManager.GetGroupId(), "new_track", &conn, session.GetClientId(), map[string]interface{}{
+				"trackId":       track.ID(),
+				"streamId":      track.StreamID(),
+				"kind":          track.Kind().String(),
+				"clientId":      session.GetClientId(),
+				"streamGroupId": router.metadata.streamGroupId,
+				"label":         router.metadata.label,
+			})
+		}
+
+		logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", session.GetClientId(), track.StreamID(), track.Kind().String(), router.metadata.streamGroupId)
 	})
 
 	session.GetPeerConnection().OnICECandidate(func(c *webrtc.ICECandidate) {
@@ -164,7 +164,7 @@ func RegisterHandlers(hub ws.WsHub) {
 	})
 	hub.On("ice_candidate", HandleIceCandidate)
 	hub.On("track_changed", func(conn ws.WebSocketConnection, data ...any) {
-		handleTrackChanged(conn, data...)
+		handleTrackChanged(hub, conn, data...)
 	})
 
 	hub.On("leave_room", func(conn ws.WebSocketConnection, data ...any) {
