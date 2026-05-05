@@ -3,7 +3,6 @@ package rtc
 import (
 	"sync"
 
-	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -40,19 +39,6 @@ type Session interface {
 	GetClientId() string
 	Close()
 	SetRemoteSet(bool)
-	GetRemoteTracks() []SessionTrack
-	GetRemoteTrack(trackId string) (SessionTrack, bool)
-
-	AddRemoteTrackMeta(trackID string, metadata SessionTrackMetadata)
-	AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote)
-	RemoveRemoteTrack(trackId string)
-
-	StartRTPStream(trackID string, clientID string) Session
-
-	SetSubscribedTrack(trackId string, subscribed bool)
-	SetOwnerSessionIdForTrack(trackId string, sessionId string)
-
-	RemoveRemoteTrackFromOwner(clientId string)
 
 	IsInitialized() bool
 
@@ -60,10 +46,8 @@ type Session interface {
 	Renegotiate(attempt *int) error
 
 	GetOfferWaitChan() chan bool
-	AddSelfTrackMetadata(streamGroupId string, metadata SessionTrackMetadata)
-	RemoveSelfTrackMetadata(streamGroupId string)
 
-	GetSelfTracksMetadata(streamGroupId string) (SessionTrackMetadata, bool)
+	Emit(event string, data ...any)
 }
 
 type WaitTrackResult struct {
@@ -236,32 +220,6 @@ func (s *session) Close() {
 	s.closed = true
 }
 
-func (s *session) StartRTPStream(trackID string, clientID string) Session {
-	if s.clientId == clientID {
-		return nil
-	}
-
-	s.mu.Lock()
-	track, exists := s.remoteTracks[trackID]
-	s.mu.Unlock()
-
-	if !exists || track.Track == nil || track.Metadata == nil || track.IsSubscribed {
-		return nil
-	}
-
-	s.SetOwnerSessionIdForTrack(track.Track.StreamID(), clientID)
-	err := forwardTrack(s, track.Track)
-
-	if err != nil {
-		logger.Sugar.Errorf("Error forwarding track %s (kind=%s) for session %s: %v", trackID, track.Metadata.kind, s.clientId, err)
-		return nil
-	}
-
-	s.SetSubscribedTrack(trackID, true)
-
-	return s
-}
-
 func (s *session) Renegotiate(attempt *int) error {
 	// defer func() {
 	// 	time.Sleep(5 * time.Second)
@@ -293,60 +251,10 @@ func (s *session) Renegotiate(attempt *int) error {
 	return nil
 }
 
-func (s *session) RemoveRemoteTrack(trackId string) {
+func (s *session) Emit(event string, data ...any) {
 	s.mu.Lock()
-	track, exists := s.remoteTracks[trackId]
-	s.mu.Unlock()
-
-	if exists && track.Track != nil {
-		if s.pc != nil {
-			mid := RemoveTrackFromPeerConnection(s.pc, track.Track.StreamID())
-			if mid != nil {
-				s.emitFn("track_removed", *mid)
-			}
-		}
+	defer s.mu.Unlock()
+	if s.emitFn != nil {
+		s.emitFn(event, data...)
 	}
-
-	s.mu.Lock()
-	delete(s.remoteTracks, trackId)
-	s.mu.Unlock()
-}
-
-func (s *session) RemoveRemoteTrackFromOwner(clientId string) {
-	s.mu.Lock()
-	remoteTracks := s.remoteTracks
-	s.mu.Unlock()
-
-	for trackId, track := range remoteTracks {
-		if track.OwnerSessionId == clientId {
-			s.mu.Lock()
-			delete(s.remoteTracks, trackId)
-			s.mu.Unlock()
-
-			if track.Track != nil {
-				if s.pc != nil {
-					mid := RemoveTrackFromPeerConnection(s.pc, track.Track.StreamID())
-
-					if mid != nil {
-						s.emitFn("track_removed", *mid)
-					}
-				}
-			}
-		}
-	}
-}
-
-func RemoveTrackFromPeerConnection(pc *webrtc.PeerConnection, trackID string) *string {
-	for _, transceiver := range pc.GetTransceivers() {
-		if transceiver.Sender() == nil || transceiver.Sender().Track() == nil {
-			continue
-		}
-
-		if transceiver.Sender().Track().ID() == trackID {
-			pc.RemoveTrack(transceiver.Sender())
-			mid := transceiver.Mid()
-			return &mid
-		}
-	}
-	return nil
 }

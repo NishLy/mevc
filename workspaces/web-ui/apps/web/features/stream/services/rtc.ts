@@ -93,21 +93,23 @@ export class WebRTCService {
         return
       }
 
-      const mid = meta.transceiverMid
+      const streamId = meta.streamId
 
-      if (!mid) {
+      console.log("Received new track meta:", { ...meta, streamId })
+
+      if (!streamId) {
         console.warn(
-          "Received new_track event without MID, cannot correlate:",
+          "Received new_track event without stream ID, cannot correlate:",
           meta.trackId
         )
         return
       }
 
-      const entry = this.pending.get(mid) ?? {}
+      const entry = this.pending.get(streamId) ?? {}
       entry.meta = meta
-      this.pending.set(mid, entry)
+      this.pending.set(streamId, entry)
 
-      this.tryResolve(mid)
+      this.tryResolve(streamId)
     })
 
     this.wsService?.on("peer_left", (clientId: string) => {
@@ -223,30 +225,32 @@ export class WebRTCService {
     // May arrive before or after new_track socket event.
     this.peerConnection.ontrack = (event: RTCTrackEvent) => {
       const track = event.track
-      const mid = event.transceiver.mid
+      const streamId = event.streams[0]?.id ?? ""
 
-      console.log("Received track:", track.id, "MID:", mid)
+      console.log("Received new track:", {
+        trackId: track.id,
+        kind: track.kind,
+        label: track.label,
+        streamId,
+      })
+
       if (this.ownTrackIds.has(track.id)) {
         return
       }
 
-      if (!mid) {
-        console.warn("Received track without MID, cannot correlate:", track.id)
+      if (!streamId) {
+        console.warn(
+          "Received track without stream ID, cannot correlate:",
+          track.id
+        )
         return
       }
 
-      if (!this.pending.has(mid)) {
-        this.emit("request_track_meta", {
-          trackId: track.id,
-          transceiverMid: mid,
-        })
-      }
-
-      const entry = this.pending.get(mid) ?? {}
+      const entry = this.pending.get(streamId) ?? {}
       entry.track = track
-      this.pending.set(mid, entry)
+      this.pending.set(streamId, entry)
 
-      this.tryResolve(mid)
+      this.tryResolve(streamId)
     }
 
     this.peerConnection.onicecandidate = (event) => {

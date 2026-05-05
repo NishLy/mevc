@@ -2,8 +2,6 @@ package rtc
 
 import (
 	"sync"
-
-	"github.com/pion/webrtc/v4"
 )
 
 type SessionManager interface {
@@ -13,62 +11,46 @@ type SessionManager interface {
 	GetSession(clientId string) (Session, bool)
 	GetSessions() []Session
 
-	RemoveSession(clientId string)
-
 	CloseAll() error
-
-	AddRemoteTrackMeta(trackID string, metadata SessionTrackMetadata)
-	AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote)
-	RemoveSubscribedTrack(trackId string)
-
-	GetSubscribedTracks() []SessionTrack
-
-	SetOwnerSessionIdForTrack(trackId string, sessionId string)
-	RemoveTracksForSession(sessionId string)
 
 	GetClientIDFromWsID(wsID string) (string, bool)
 	GetSessionByWsID(wsID string) (Session, bool)
+
+	AddRouter(streamID string, router *TrackRouter)
+	GetRouter(streamID string) (*TrackRouter, bool)
+	RemoveRouter(streamID string)
+
+	// AddTemporaryMetadata(streamID string, metadata SessionTrackMetadata)
+	// GetTemporaryMetadata(streamID string) (SessionTrackMetadata, bool)
+	// RemoveTemporaryMetadata(streamID string)
+
+	SubscribeToExistingTracks(newSession Session)
+
+	RemoveFromSessionManager(clientID string)
 }
 
 type sessionManager struct {
-	id               string
-	sessions         map[string]Session
-	subscribedTracks map[string]SessionTrack
-	wsToClientId     map[string]string
-	mu               sync.RWMutex
+	id           string
+	sessions     map[string]Session
+	wsToClientId map[string]string
+	routers      map[string]*TrackRouter
+	// temporaryMetadata map[string]SessionTrackMetadata
+	mu sync.RWMutex
 }
 
 func NewSessionManager(id string) SessionManager {
 	return &sessionManager{
-		id:               id,
-		sessions:         make(map[string]Session),
-		subscribedTracks: make(map[string]SessionTrack),
-		wsToClientId:     make(map[string]string),
-		mu:               sync.RWMutex{},
+		id:           id,
+		sessions:     make(map[string]Session),
+		wsToClientId: make(map[string]string),
+		routers:      make(map[string]*TrackRouter),
+		// temporaryMetadata: make(map[string]SessionTrackMetadata),
+		mu: sync.RWMutex{},
 	}
 }
 
 func (sm *sessionManager) GetGroupId() string {
 	return sm.id
-}
-
-func (sm *sessionManager) RemoveTracksForSession(sessionId string) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	for trackId, track := range sm.subscribedTracks {
-		if track.OwnerSessionId == sessionId {
-			delete(sm.subscribedTracks, trackId)
-		}
-	}
-}
-
-func (sm *sessionManager) SetOwnerSessionIdForTrack(trackId string, sessionId string) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	if track, exists := sm.subscribedTracks[trackId]; exists {
-		track.OwnerSessionId = sessionId
-		sm.subscribedTracks[trackId] = track
-	}
 }
 
 func (sm *sessionManager) GetSessions() []Session {
@@ -79,45 +61,6 @@ func (sm *sessionManager) GetSessions() []Session {
 		sessions = append(sessions, session)
 	}
 	return sessions
-}
-
-func (sm *sessionManager) AddRemoteTrackMeta(trackID string, metadata SessionTrackMetadata) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	sm.subscribedTracks[trackID] = SessionTrack{
-		Metadata: &metadata,
-		Track:    nil,
-	}
-}
-
-func (sm *sessionManager) AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	if existing, exists := sm.subscribedTracks[trackID]; exists {
-		existing.Track = track
-		sm.subscribedTracks[trackID] = existing
-		return
-	}
-	sm.subscribedTracks[trackID] = SessionTrack{
-		Metadata: nil,
-		Track:    track,
-	}
-}
-
-func (sm *sessionManager) RemoveSubscribedTrack(trackId string) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	delete(sm.subscribedTracks, trackId)
-}
-
-func (sm *sessionManager) GetSubscribedTracks() []SessionTrack {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-	tracks := make([]SessionTrack, 0, len(sm.subscribedTracks))
-	for _, track := range sm.subscribedTracks {
-		tracks = append(tracks, track)
-	}
-	return tracks
 }
 
 func (sm *sessionManager) GetSession(clientId string) (Session, bool) {
@@ -132,21 +75,6 @@ func (sm *sessionManager) AddSession(session Session, wsID string) {
 	defer sm.mu.Unlock()
 	sm.sessions[session.GetClientId()] = session
 	sm.wsToClientId[wsID] = session.GetClientId()
-}
-
-func (sm *sessionManager) RemoveSession(clientId string) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	delete(sm.sessions, clientId)
-
-	for wsID, cid := range sm.wsToClientId {
-		if cid == clientId {
-
-			delete(sm.wsToClientId, wsID)
-			break
-		}
-	}
 }
 
 func (sm *sessionManager) CloseAll() error {
@@ -176,4 +104,94 @@ func (sm *sessionManager) GetSessionByWsID(wsID string) (Session, bool) {
 	}
 	session, exists := sm.sessions[clientID]
 	return session, exists
+}
+
+func (sm *sessionManager) SubscribeToExistingTracks(newSession Session) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	needsRenegotiation := false
+
+	for _, router := range sm.routers {
+		// Don't subscribe the user to their own published tracks
+		if router.publisherPC == newSession.GetPeerConnection() {
+			continue
+		}
+
+		err := router.AddViewer(newSession)
+		if err == nil {
+			needsRenegotiation = true
+
+			if router.hasStarted && router.metadata != nil {
+				newSession.Emit("new_track", router.incomingTrack.StreamID(), map[string]interface{}{
+					"trackId":       router.incomingTrack.ID(),
+					"streamId":      router.incomingTrack.StreamID(),
+					"kind":          router.incomingTrack.Kind().String(),
+					"clientId":      newSession.GetClientId(),
+					"streamGroupId": sm.GetGroupId(),
+					"label":         router.metadata.label,
+				})
+			}
+		}
+	}
+
+	if needsRenegotiation {
+		newSession.Renegotiate(nil)
+	}
+}
+
+func (sm *sessionManager) AddRouter(trackId string, router *TrackRouter) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.routers == nil {
+		sm.routers = make(map[string]*TrackRouter)
+	}
+	sm.routers[trackId] = router
+}
+
+func (sm *sessionManager) GetRouter(trackId string) (*TrackRouter, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	router, exists := sm.routers[trackId]
+	return router, exists
+}
+
+func (sm *sessionManager) RemoveRouter(trackId string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	delete(sm.routers, trackId)
+}
+
+func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
+	session, exists := sm.GetSession(clientID)
+	if !exists || session == nil {
+		return
+	}
+
+	session.Close()
+
+	var routersToClose []string
+	for _, router := range sm.routers {
+		if router.publisherID == session.GetClientId() {
+			router.Close()
+			routersToClose = append(routersToClose, router.incomingTrack.StreamID())
+		}
+	}
+
+	for _, trackId := range routersToClose {
+		sm.RemoveRouter(trackId)
+	}
+
+	for wsID, cid := range sm.wsToClientId {
+		if cid == clientID {
+			delete(sm.wsToClientId, wsID)
+			break
+		}
+	}
+
+	delete(sm.sessions, clientID)
+
+	if len(sm.GetSessions()) == 0 {
+		delete(GlobalSessionManager, sm.GetGroupId())
+	}
 }
