@@ -344,11 +344,14 @@ export class WebRTCService {
         continue
       }
 
+      const streamID = stream.stream.id
+
       hasChanged = true
-      this.emit("track_removed", stream.id)
+
+      this.emit("track_removed", streamID)
 
       if (this.options.onRemovedRemoteStream) {
-        this.options.onRemovedRemoteStream(stream.id)
+        this.options.onRemovedRemoteStream(streamID)
       }
     }
 
