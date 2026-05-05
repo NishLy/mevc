@@ -79,8 +79,6 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 
 		if !exist {
 			router = NewTrackRouter(session.GetPeerConnection(), session.GetClientId())
-
-			// try start
 		}
 
 		router.SetIncomingTrack(track)
@@ -171,7 +169,7 @@ func RegisterHandlers(hub ws.WsHub) {
 	hub.On("join_room", func(conn ws.WebSocketConnection, data ...any) {
 		HandleJoinRoom(hub, conn, data...)
 	})
-	hub.On("request_track_meta", HandleRequestMeta)
+	// hub.On("request_track_meta", HandleRequestMeta)
 	hub.On("disconnect", func(conn ws.WebSocketConnection, data ...any) {
 		HandleDisconnect(hub, conn, data...)
 	})

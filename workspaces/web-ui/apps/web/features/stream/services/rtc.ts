@@ -88,14 +88,14 @@ export class WebRTCService {
     await this.createPeerConnection()
 
     this.wsService?.on("new_track", (clientId: string, meta: TrackMeta) => {
+      console.log("Received new track meta:", { ...meta })
+
       if (this.clientId === clientId) {
         this.ownTrackIds.add(meta.trackId)
         return
       }
 
       const streamId = meta.streamId
-
-      console.log("Received new track meta:", { ...meta, streamId })
 
       if (!streamId) {
         console.warn(

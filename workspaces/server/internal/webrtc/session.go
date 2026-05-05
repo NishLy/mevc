@@ -2,7 +2,6 @@ package rtc
 
 import (
 	"sync"
-	"time"
 
 	"github.com/pion/webrtc/v4"
 )
@@ -232,14 +231,7 @@ func (s *session) Renegotiate(attempt *int) (err error) {
 
 	// Always release
 	defer func() {
-		// rollback on error
-		time.Sleep(5 * time.Second)
-
-		if err != nil && s.pc != nil {
-			_ = s.pc.SetLocalDescription(webrtc.SessionDescription{})
-		}
-
-		<-s.offerWaitChan
+		// <-s.offerWaitChan
 	}()
 
 	s.mu.Lock()

@@ -216,6 +216,8 @@ func HandleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) 
 		"streamGroupId": streamGroupId,
 		"label":         label,
 	})
+
+	logger.Sugar.Infof("Client %s changed track %s (kind=%s) in stream group %s", clientID, streamId, kind, streamGroupId)
 }
 
 func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) (err error) {
@@ -258,49 +260,6 @@ func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) (err erro
 	<-session.GetOfferWaitChan()
 
 	return nil
-}
-
-func HandleRequestMeta(conn ws.WebSocketConnection, data ...any) {
-	sessionManager := GetGroupManagerFromConn(conn)
-	if sessionManager == nil {
-		return
-	}
-
-	session, exists := sessionManager.GetSessionByWsID(conn.ID())
-	if !exists {
-		return
-	}
-
-	metaMap := data[1].(map[string]interface{})
-
-	if metaMap["transceiverMid"] == nil {
-		logger.Sugar.Warnf("Invalid track metadata from client %s: %v", session.GetClientId(), metaMap)
-		return
-	}
-
-	// pc := session.GetPeerConnection()
-
-	// for _, track := range pc.GetTransceivers() {
-	// 	if track.Mid() == metaMap["transceiverMid"].(string) {
-	// 		sessionTrack, exist := sessionManager.GetRouter(me)
-
-	// 		if !exist {
-	// 			logger.Sugar.Warnf("No track found for MID %s in session of client %s", track.Mid(), session.GetClientId())
-	// 			return
-	// 		}
-
-	// 		conn.Emit("new_track", sessionTrack.Metadata.clientId, map[string]interface{}{
-	// 			"clientId":       sessionTrack.Metadata.clientId,
-	// 			"trackId":        sessionTrack.Metadata.trackId,
-	// 			"kind":           sessionTrack.Metadata.kind,
-	// 			"streamId":       sessionTrack.Metadata.streamId,
-	// 			"streamGroupId":  sessionTrack.Metadata.streamGroupId,
-	// 			"label":          sessionTrack.Metadata.label,
-	// 			"transceiverMid": track.Mid(),
-	// 		})
-	// 	}
-	// }
-
 }
 
 func HandleRemoveTrack(conn ws.WebSocketConnection, data ...any) {
