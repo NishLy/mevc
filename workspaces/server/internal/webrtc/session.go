@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"sync"
+	"time"
 
 	"github.com/pion/webrtc/v4"
 )
@@ -39,8 +40,7 @@ type Session interface {
 	GetClientId() string
 	Close()
 	SetRemoteSet(bool)
-
-	IsInitialized() bool
+	GetMutex() *sync.Mutex
 
 	SetEmitFunc(fn func(event string, data ...any))
 	Renegotiate(attempt *int) error
@@ -48,6 +48,8 @@ type Session interface {
 	GetOfferWaitChan() chan bool
 
 	Emit(event string, data ...any)
+
+	IsRemoteSet() bool
 }
 
 type WaitTrackResult struct {
@@ -62,7 +64,6 @@ type session struct {
 	mu                 sync.Mutex
 	remoteSet          bool
 	remoteTracks       map[string]SessionTrack
-	initialized        bool
 	closed             bool
 	emitFn             func(event string, data ...any)
 	offerWaitChan      chan bool
@@ -77,11 +78,20 @@ func NewSession(clientID string, pc *webrtc.PeerConnection) Session {
 		mu:                 sync.Mutex{},
 		remoteSet:          false,
 		remoteTracks:       make(map[string]SessionTrack),
-		initialized:        true,
 		closed:             false,
 		offerWaitChan:      make(chan bool, 1),
 		selfTracksMetadata: make(map[string]SessionTrackMetadata),
 	}
+}
+
+func (s *session) IsRemoteSet() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.remoteSet
+}
+
+func (s *session) GetMutex() *sync.Mutex {
+	return &s.mu
 }
 
 func (s *session) AddSelfTrackMetadata(trackID string, metadata SessionTrackMetadata) {
@@ -170,12 +180,6 @@ func (s *session) GetRemoteTracks() []SessionTrack {
 	return tracks
 }
 
-func (s *session) IsInitialized() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.initialized
-}
-
 func (s *session) SetRemoteSet(remoteSet bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -207,6 +211,9 @@ func (s *session) SetSubscribedTrack(trackId string, subscribed bool) {
 }
 
 func (s *session) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.closed || s == nil {
 		return
 	}
@@ -220,16 +227,23 @@ func (s *session) Close() {
 	s.closed = true
 }
 
-func (s *session) Renegotiate(attempt *int) error {
-	// defer func() {
-	// 	time.Sleep(5 * time.Second)
-
-	// 	logger.Sugar.Infof("Releasing offer wait lock for session %s after renegotiation attempt", s.clientId)
-
-	// 	<-s.offerWaitChan
-	// }()
-
+func (s *session) Renegotiate(attempt *int) (err error) {
 	s.offerWaitChan <- true
+
+	// Always release
+	defer func() {
+		// rollback on error
+		time.Sleep(5 * time.Second)
+
+		if err != nil && s.pc != nil {
+			_ = s.pc.SetLocalDescription(webrtc.SessionDescription{})
+		}
+
+		<-s.offerWaitChan
+	}()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	pc := s.pc
 	emitFn := s.emitFn
@@ -238,13 +252,15 @@ func (s *session) Renegotiate(attempt *int) error {
 		return nil
 	}
 
-	offer, err := pc.CreateOffer(nil)
+	var offer webrtc.SessionDescription
+
+	offer, err = pc.CreateOffer(nil)
 	if err != nil {
-		return err
+		return
 	}
 
-	if err := pc.SetLocalDescription(offer); err != nil {
-		return err
+	if err = pc.SetLocalDescription(offer); err != nil {
+		return
 	}
 
 	emitFn("new_offer", s.clientId, offer)

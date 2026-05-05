@@ -176,11 +176,16 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 	session.Close()
 
 	var routersToClose []string
+
+	sm.mu.RLock()
 	for _, router := range sm.routers {
 		if router.publisherID == session.GetClientId() {
-			routersToClose = append(routersToClose, router.incomingTrack.StreamID())
+			if router.incomingTrack != nil {
+				routersToClose = append(routersToClose, router.incomingTrack.StreamID())
+			}
 		}
 	}
+	sm.mu.RUnlock()
 
 	for _, trackId := range routersToClose {
 		sm.RemoveRouter(trackId)

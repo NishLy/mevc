@@ -78,6 +78,13 @@ func (r *TrackRouter) broadcastLoop() {
 
 // AddViewer is called when a new peer wants to watch the stream
 func (r *TrackRouter) AddViewer(viewerSession Session) error {
+	r.Lock()
+	defer r.Unlock()
+
+	if _, exists := r.viewers[viewerSession.GetClientId()]; exists {
+		return fmt.Errorf("viewer already exists")
+	}
+
 	viewerPC := viewerSession.GetPeerConnection()
 
 	if r.incomingTrack == nil {
@@ -101,12 +108,10 @@ func (r *TrackRouter) AddViewer(viewerSession Session) error {
 	}
 
 	// 3. Safely add this track to our broadcaster list
-	r.Lock()
 	r.viewers[viewerSession.GetClientId()] = &Viewer{
 		session: viewerSession,
 		track:   localTrack,
 	}
-	r.Unlock()
 
 	// 4. CRITICAL: Ask the PUBLISHER for a Keyframe so the new viewer can start decoding
 	err = r.publisherPC.WriteRTCP([]rtcp.Packet{

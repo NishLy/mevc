@@ -147,10 +147,8 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 		}
 
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
-
-			if session.GetClientId() != "" {
-				conn.Emit("peer_connection_closed", session.GetClientId(), "Peer connection closed due to failure or closure")
-			}
+			sessionManager.RemoveFromSessionManager(session.GetClientId())
+			hub.EmitTo(sessionManager.GetGroupId(), "peer_connection_closed", nil, session.GetClientId(), "Peer connection closed due to failure or closure")
 		}
 	})
 }
@@ -164,7 +162,7 @@ func RegisterHandlers(hub ws.WsHub) {
 	})
 	hub.On("ice_candidate", HandleIceCandidate)
 	hub.On("track_changed", func(conn ws.WebSocketConnection, data ...any) {
-		handleTrackChanged(hub, conn, data...)
+		HandleTrackChanged(hub, conn, data...)
 	})
 
 	hub.On("leave_room", func(conn ws.WebSocketConnection, data ...any) {

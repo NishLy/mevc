@@ -1,6 +1,8 @@
 package rtc
 
 import (
+	"fmt"
+
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/ws"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 	"github.com/pion/webrtc/v4"
@@ -91,6 +93,18 @@ func HandleOffer(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 
 	pc := session.GetPeerConnection()
 
+	// replace local offer with new one if exists (renegotiation)
+	if session.IsRemoteSet() {
+		Must(pc.SetLocalDescription(webrtc.SessionDescription{}))
+	}
+
+	// Block
+	session.GetMutex().Lock()
+	defer func() {
+		session.GetMutex().Unlock()
+		session.SetRemoteSet(true)
+	}()
+
 	// 2. Parse SDP
 	offerMap, ok := data[1].(map[string]interface{})
 	if !ok {
@@ -104,7 +118,6 @@ func HandleOffer(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 
 	// 3. Set Remote and process buffer
 	Must(pc.SetRemoteDescription(offer))
-	session.SetRemoteSet(true)
 
 	// 4. Create Answer
 	answer, err := pc.CreateAnswer(nil)
@@ -143,7 +156,7 @@ func HandleIceCandidate(conn ws.WebSocketConnection, data ...any) {
 	Must(session.GetPeerConnection().AddICECandidate(candidate))
 }
 
-func handleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
+func HandleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	sessionManager := GetGroupManagerFromConn(conn)
 	if sessionManager == nil {
 		return
@@ -179,7 +192,6 @@ func handleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) 
 	session, exists := sessionManager.GetSession(clientID)
 
 	if !exists || session == nil {
-		logger.Sugar.Warnf("Session not found for client %s when handling track change", clientID)
 		return
 	}
 
@@ -206,7 +218,7 @@ func handleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) 
 	})
 }
 
-func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) {
+func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) (err error) {
 	sessionManager := GetGroupManagerFromConn(conn)
 	if sessionManager == nil {
 		return
@@ -217,14 +229,21 @@ func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
+	defer func() {
+		if err != nil {
+			Must(session.GetPeerConnection().SetLocalDescription(webrtc.SessionDescription{}))
+			<-session.GetOfferWaitChan()
+		}
+	}()
+
 	answerMap, ok := data[1].(map[string]interface{})
 	if !ok {
-		return
+		return fmt.Errorf("invalid answer map")
 	}
 
 	sdp, ok := answerMap["sdp"].(string)
 	if !ok {
-		return
+		return fmt.Errorf("invalid sdp")
 	}
 
 	answer := webrtc.SessionDescription{
@@ -232,9 +251,13 @@ func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) {
 		SDP:  sdp,
 	}
 
-	Must(session.GetPeerConnection().SetRemoteDescription(answer))
+	if err = session.GetPeerConnection().SetRemoteDescription(answer); err != nil {
+		return
+	}
 
 	<-session.GetOfferWaitChan()
+
+	return nil
 }
 
 func HandleRequestMeta(conn ws.WebSocketConnection, data ...any) {
