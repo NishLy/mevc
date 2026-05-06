@@ -56,8 +56,6 @@ const RenderLoading = (status: MeetConnectionState) => {
 }
 
 export default function Room({ roomId }: RoomProps) {
-  const [hasDisconnected, setHasDisconnected] = useState(false)
-
   const {
     localStreams,
     status,
@@ -74,18 +72,12 @@ export default function Room({ roomId }: RoomProps) {
 
   useEffect(() => {
     const ws = new WSservice({
-      url: "ws://localhost:8000/ws?tenant_id=123",
+      url: process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws",
       options: {
         reconnect: true, // to make sure it tries to reconnect on disconnection
         autoConnect: true,
         listeners: {
           connect: () => {
-            console.log(
-              "WebSocket connected, emitting join_room with clientId:",
-              dummyClientId,
-              "and roomId:",
-              roomId
-            )
             ws.emit("join_room", dummyClientId, roomId)
           },
           joined_room: (joinedRoomId: string) => {
