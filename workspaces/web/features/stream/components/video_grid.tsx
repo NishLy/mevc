@@ -19,7 +19,7 @@ export default function VideosGrid() {
   const remoteStreams = useMeet((state) => state.remoteStreams)
 
   const streams = useMemo(
-    () => [...localStreams, ...remoteStreams],
+    () => [...localStreams.filter((s) => s !== null), ...remoteStreams],
     [localStreams, remoteStreams]
   )
 

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 interface WsMessage {
   metadata: {
     id: string
@@ -112,7 +113,7 @@ class WSservice {
     }
   }
 
-  emit(eventName: string, ...data: unknown[]) {
+  emit(eventName: string, ...data: any[]) {
     if (!this.connected || this.ws?.readyState !== WebSocket.OPEN) {
       return
     }
@@ -124,7 +125,7 @@ class WSservice {
     }
   }
 
-  on(eventName: string, callback: (...data: unknown[]) => void) {
+  on(eventName: string, callback: (...data: any[]) => void) {
     const handlers = this.listeners.get(eventName) || []
     handlers.push(callback)
     this.listeners.set(eventName, handlers)

@@ -1,12 +1,10 @@
 import {
   AudioOpenSettings,
   CameraOpenSettings,
-  MediaStreamItem,
+  LOCAL_STREAM_TYPE,
+  LocalStreamsTuple,
   MediaStreamOptions,
 } from "../types/service"
-
-const LOCAL_STREAM_CONSTANT = "local_stream"
-const LOCAL_SCREEN_SHARE_STREAM_CONSTRAINT = "local_screen_share_stream"
 
 export function createBlackVideoTrack(width = 640, height = 480) {
   const canvas = Object.assign(document.createElement("canvas"), {
@@ -27,15 +25,15 @@ export const defaultMediaStreamOptions: MediaStreamOptions = {
 }
 
 export class MediaStreamController {
-  localStreams: MediaStreamItem[] = []
-  currentLocalStream: MediaStream | null = null
-  currentScreenShareStream: MediaStream | null = null
+  localStreams: LocalStreamsTuple = [null, null]
+  activeLocalMediaStream: MediaStream | null = null
+  activeScreenShareStream: MediaStream | null = null
   availableVideoDevices: MediaDeviceInfo[] = []
   availableAudioDevices: MediaDeviceInfo[] = []
   options: MediaStreamOptions = { ...defaultMediaStreamOptions }
 
-  currentVideoDeviceId: string | null = null
-  currentAudioDeviceId: string | null = null
+  activeVideoDeviceId: string | null = null
+  activeAudioDeviceId: string | null = null
 
   isCurrentlySharingScreen = false
   isCurrentlyRecording = false
@@ -50,10 +48,10 @@ export class MediaStreamController {
   onVideoDeviceChangeCallback?: (deviceId: string) => void
   onAudioDeviceChangeCallback?: (deviceId: string) => void
   onScreenShareToggleCallback?: (isSharing: boolean) => void
-  onLocalStreamUpdateCallback?: (streams: MediaStreamItem[]) => void
+  onLocalStreamUpdateCallback?: (streams: LocalStreamsTuple) => void
   onRecordingToggleCallback?: (isRecording: boolean) => void
 
-  currentLocalStreamState = {
+  activeStreamConfiguration = {
     videoEnabled: true,
     audioEnabled: true,
   }
@@ -76,22 +74,31 @@ export class MediaStreamController {
     this.changeAudioDevice = this.changeAudioDevice.bind(this)
     this.toggleVideo = this.toggleVideo.bind(this)
     this.toggleAudio = this.toggleAudio.bind(this)
-    this.startLocalStream = this.startLocalStream.bind(this)
+    this.initializeMediaStream = this.initializeMediaStream.bind(this)
     this.stopScreenShare = this.stopScreenShare.bind(this)
     this.startScreenShare = this.startScreenShare.bind(this)
     this.destroy = this.destroy.bind(this)
+    this.startRecording = this.startRecording.bind(this)
+    this.stopRecording = this.stopRecording.bind(this)
+    this.saveRecording = this.saveRecording.bind(this)
+    this.setLocalStream = this.setLocalStream.bind(this)
+    this.removeLocalStream = this.removeLocalStream.bind(this)
   }
 
   private async init() {
-    const videoCameras = await this.getConnectedDevices("videoinput")
-    const audioDevices = await this.getConnectedDevices("audioinput")
+    const videoCameras = await this.getConnectedDevices("videoinput", "video")
+    const audioDevices = await this.getConnectedDevices("audioinput", "audio")
 
-    this.availableVideoDevices = videoCameras
-    this.availableAudioDevices = audioDevices
-
+    // Listen for device changes
     navigator.mediaDevices.addEventListener("devicechange", async () => {
-      const newVideoCameras = await this.getConnectedDevices("videoinput")
-      const newAudioDevices = await this.getConnectedDevices("audioinput")
+      const newVideoCameras = await this.getConnectedDevices(
+        "videoinput",
+        "video"
+      )
+      const newAudioDevices = await this.getConnectedDevices(
+        "audioinput",
+        "audio"
+      )
 
       if (this.onDevicesUpdatedCallback) {
         this.onDevicesUpdatedCallback(newVideoCameras, newAudioDevices)
@@ -101,121 +108,141 @@ export class MediaStreamController {
       this.availableAudioDevices = newAudioDevices
     })
 
+    // Auto-start stream if option is enabled
     if (this.options.autoStartStream) {
+      // If useAnyAvailableCamera/audio is enabled, set the current device IDs to the first available devices
       if (this.options.useAnyAvailableCamera && videoCameras.length > 0) {
-        this.currentVideoDeviceId = videoCameras[0]!.deviceId
+        this.activeVideoDeviceId = videoCameras[0]!.deviceId
         if (this.onVideoDeviceChangeCallback) {
-          this.onVideoDeviceChangeCallback(this.currentVideoDeviceId)
+          this.onVideoDeviceChangeCallback(this.activeVideoDeviceId)
         }
       }
 
+      // If useAnyAvailableAudio is enabled, set the current device IDs to the first available devices
       if (this.options.useAnyAvailableAudio && audioDevices.length > 0) {
-        this.currentAudioDeviceId = audioDevices[0]!.deviceId
+        this.activeAudioDeviceId = audioDevices[0]!.deviceId
         if (this.onAudioDeviceChangeCallback) {
-          this.onAudioDeviceChangeCallback(this.currentAudioDeviceId)
+          this.onAudioDeviceChangeCallback(this.activeAudioDeviceId)
         }
       }
 
-      const { id, stream } = await this.startLocalStream(
+      // Start the local stream with the current device IDs (which may have been set above based on options)
+      const { stream } = await this.initializeMediaStream(
         {
-          ...(this.options.cameraOptions as Record<string, any>),
-          deviceId: this.currentVideoDeviceId || undefined,
+          ...(this.options.cameraOptions as Record<string, unknown>),
+          deviceId: this.activeVideoDeviceId || undefined,
         },
         {
-          ...(this.options.audioOptions as Record<string, any>),
-          deviceId: this.currentAudioDeviceId || undefined,
+          ...(this.options.audioOptions as Record<string, unknown>),
+          deviceId: this.activeAudioDeviceId || undefined,
         },
         this.options.videoEnabled,
         this.options.audioEnabled
       )
 
-      this.currentLocalStream = stream
+      this.activeLocalMediaStream = stream
 
-      // Defer setting the local stream to ensure any onLocalStreamUpdateCallback is set
-      setTimeout(() => {
-        if (this.currentLocalStream) {
-          this.setLocalStream(LOCAL_STREAM_CONSTANT, this.currentLocalStream)
-        }
+      // Ensure the local stream is added to the list of local streams
+      this.setLocalStream(LOCAL_STREAM_TYPE.CAMERA, this.activeLocalMediaStream)
 
-        if (this.onDevicesUpdatedCallback) {
-          this.onDevicesUpdatedCallback(videoCameras, audioDevices)
-        }
-      }, 1000)
+      // Store available devices in the instance for later use
+      this.onDevicesUpdatedCallback?.(videoCameras, audioDevices)
     }
   }
 
-  private setLocalStream(type = LOCAL_STREAM_CONSTANT, stream: MediaStream) {
-    const id = this.id + "_" + type
-    const item = this.localStreams.find((s) => s.id === id)
+  private getLocalStreamsIndex(type: string) {
+    return type === LOCAL_STREAM_TYPE.CAMERA ? 0 : 1
+  }
+
+  private getIDForStreamType(type: string) {
+    return type === LOCAL_STREAM_TYPE.CAMERA
+      ? LOCAL_STREAM_TYPE.CAMERA
+      : LOCAL_STREAM_TYPE.SCREEN_SHARE
+  }
+
+  // Updates the local media stream in the list of local streams, either replacing the existing stream or adding a new entry if it doesn't exist, and triggers an update callback to notify of changes
+  private async setLocalStream(
+    type = LOCAL_STREAM_TYPE.CAMERA,
+    stream: MediaStream
+  ) {
+    const index = await this.getLocalStreamsIndex(type)
+    const item = this.localStreams[index]
 
     if (item) {
       item.stream = stream
     } else {
-      this.localStreams.push({
-        id,
+      this.localStreams[index] = {
+        id: this.getIDForStreamType(type),
         stream,
-        type: "camera",
+        type,
         isLocal: true,
+      }
+    }
+
+    this.onLocalStreamUpdateCallback?.(this.localStreams)
+  }
+
+  // Removes a local stream from the list of local streams based on the specified type and triggers an update callback to notify of changes
+  private async removeLocalStream(type = LOCAL_STREAM_TYPE.CAMERA) {
+    const index = await this.getLocalStreamsIndex(type)
+    this.localStreams[index] = null
+    this.onLocalStreamUpdateCallback?.(this.localStreams)
+  }
+
+  // Fetches connected media devices of a specific type (audio or video), requesting permissions if necessary to access device labels
+  async getConnectedDevices(type: string, kind: "video" | "audio" | "both") {
+    try {
+      // Requesting any stream to ensure device labels are available (some browsers require this)
+      await navigator.mediaDevices.getUserMedia({
+        video: kind === "video" || kind === "both",
+        audio: kind === "audio" || kind === "both",
       })
+
+      return (await navigator.mediaDevices.enumerateDevices()).filter(
+        (device) => device.kind === type
+      )
+    } catch (_e) {
+      return []
     }
-
-    if (this.onLocalStreamUpdateCallback) {
-      this.onLocalStreamUpdateCallback(this.localStreams)
-    }
-  }
-
-  private removeLocalStream(type = LOCAL_STREAM_CONSTANT, stream: MediaStream) {
-    const id = this.id + "_" + type
-    this.localStreams = this.localStreams.filter((s) => s.id !== id)
-    if (this.onLocalStreamUpdateCallback) {
-      this.onLocalStreamUpdateCallback(this.localStreams)
-    }
-  }
-
-  async getConnectedDevices(type: string) {
-    // Requesting any stream to ensure device labels are available (some browsers require this)
-    await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    })
-
-    const devices = await navigator.mediaDevices.enumerateDevices()
-    return devices.filter((device) => device.kind === type)
   }
 
   stopMediaStream(stream: MediaStream) {
     stream.getTracks().forEach((track) => track.stop())
   }
 
+  // Get user media stream based on current device selections and options, throws error if access is denied or fails
   private async requestScreenShare() {
     const mediaStream = await navigator.mediaDevices.getDisplayMedia({
       video: {},
       audio: true,
     })
     return {
-      id: this.generateStreamId(),
       stream: mediaStream,
     }
   }
 
+  // Changes the video input device by stopping the current stream, requesting a new one with the selected device, and updating the local stream reference
   async changeVideoDevice(newDeviceId: string, options?: CameraOpenSettings) {
     try {
-      this.currentVideoDeviceId = newDeviceId
-      if (this.currentLocalStream) {
-        this.stopMediaStream(this.currentLocalStream)
-        this.currentLocalStream = null
+      this.activeVideoDeviceId = newDeviceId
+      if (this.activeLocalMediaStream) {
+        this.stopMediaStream(this.activeLocalMediaStream)
+        this.activeLocalMediaStream = null
       }
       options = options || this.options.cameraOptions
-      const stream = await this.startLocalStream(
-        { deviceId: newDeviceId, ...(options as Record<string, any>) },
+      const stream = await this.initializeMediaStream(
+        { deviceId: newDeviceId, ...(options as Record<string, unknown>) },
         this.options.audioOptions || {
-          deviceId: this.currentAudioDeviceId || undefined,
+          deviceId: this.activeAudioDeviceId || undefined,
         },
         this.options.videoEnabled,
         this.options.audioEnabled
       )
-      this.currentLocalStream = stream.stream
-      this.setLocalStream(LOCAL_STREAM_CONSTANT, this.currentLocalStream)
+      this.activeLocalMediaStream = stream.stream
+      await this.setLocalStream(
+        LOCAL_STREAM_TYPE.CAMERA,
+        this.activeLocalMediaStream
+      )
       if (this.onVideoDeviceChangeCallback) {
         this.onVideoDeviceChangeCallback(newDeviceId)
       }
@@ -224,24 +251,25 @@ export class MediaStreamController {
     }
   }
 
+  // Changes the audio input device by stopping the current stream, requesting a new one with the selected device, and updating the local stream reference
   async changeAudioDevice(newDeviceId: string, options?: AudioOpenSettings) {
     try {
-      this.currentAudioDeviceId = newDeviceId
-      if (this.currentLocalStream) {
-        this.stopMediaStream(this.currentLocalStream)
-        this.currentLocalStream = null
+      this.activeAudioDeviceId = newDeviceId
+      if (this.activeLocalMediaStream) {
+        this.stopMediaStream(this.activeLocalMediaStream)
+        this.activeLocalMediaStream = null
       }
       options = options || this.options.audioOptions
-      const stream = await this.startLocalStream(
+      const stream = await this.initializeMediaStream(
         this.options.cameraOptions || {
-          deviceId: this.currentVideoDeviceId || undefined,
+          deviceId: this.activeVideoDeviceId || undefined,
         },
-        { deviceId: newDeviceId, ...(options as Record<string, any>) },
+        { deviceId: newDeviceId, ...(options as Record<string, unknown>) },
         this.options.videoEnabled,
         this.options.audioEnabled
       )
-      this.currentLocalStream = stream.stream
-      this.setLocalStream(LOCAL_STREAM_CONSTANT, this.currentLocalStream)
+      this.activeLocalMediaStream = stream.stream
+      this.setLocalStream(LOCAL_STREAM_TYPE.CAMERA, this.activeLocalMediaStream)
       if (this.onAudioDeviceChangeCallback) {
         this.onAudioDeviceChangeCallback(newDeviceId)
       }
@@ -250,46 +278,46 @@ export class MediaStreamController {
     }
   }
 
+  // Toggles the enabled state of video tracks in the active local media stream, updating internal state and invoking a callback if provided
   toggleVideo() {
-    if (this.currentLocalStream) {
-      this.currentLocalStream.getVideoTracks().forEach((track) => {
-        track.enabled = !this.currentLocalStreamState.videoEnabled
+    if (this.activeLocalMediaStream) {
+      this.activeLocalMediaStream.getVideoTracks().forEach((track) => {
+        track.enabled = !this.activeStreamConfiguration.videoEnabled
       })
-      this.currentLocalStreamState.videoEnabled =
-        !this.currentLocalStreamState.videoEnabled
+      this.activeStreamConfiguration.videoEnabled =
+        !this.activeStreamConfiguration.videoEnabled
       if (this.onVideoToggleCallback) {
-        this.onVideoToggleCallback(this.currentLocalStreamState.videoEnabled)
+        this.onVideoToggleCallback(this.activeStreamConfiguration.videoEnabled)
       }
     }
   }
 
+  // Toggles the enabled state of audio tracks in the active local media stream, updating internal state and invoking a callback if provided
   toggleAudio() {
-    if (this.currentLocalStream) {
-      this.currentLocalStream.getAudioTracks().forEach((track) => {
-        track.enabled = !this.currentLocalStreamState.audioEnabled
+    if (this.activeLocalMediaStream) {
+      this.activeLocalMediaStream.getAudioTracks().forEach((track) => {
+        track.enabled = !this.activeStreamConfiguration.audioEnabled
       })
-      this.currentLocalStreamState.audioEnabled =
-        !this.currentLocalStreamState.audioEnabled
+      this.activeStreamConfiguration.audioEnabled =
+        !this.activeStreamConfiguration.audioEnabled
       if (this.onAudioToggleCallback) {
-        this.onAudioToggleCallback(this.currentLocalStreamState.audioEnabled)
+        this.onAudioToggleCallback(this.activeStreamConfiguration.audioEnabled)
       }
     }
   }
 
-  private generateStreamId() {
-    return `stream_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  async startLocalStream(
+  // Initializes a new media stream based on provided camera and audio options, applying the current enabled/disabled state for video and audio tracks to ensure consistency across device changes
+  async initializeMediaStream(
     cameraOptions?: CameraOpenSettings,
     audioOptions?: AudioOpenSettings,
+
     // Add these parameters to maintain state across device swaps
     videoEnabled = true,
     audioEnabled = true
   ) {
     const combinedStream = new MediaStream()
 
-    if (cameraOptions) {
+    if (cameraOptions && (cameraOptions as Record<string, unknown>).deviceId) {
       try {
         const videoStream = await navigator.mediaDevices.getUserMedia({
           video: cameraOptions,
@@ -300,16 +328,16 @@ export class MediaStreamController {
         })
       } catch (e) {
         console.warn("Could not access video device:", e)
-        const blackTrack = createBlackVideoTrack()
+        const blackTrack = createBlackVideoTrack(1280, 720) // Create a black track with a common resolution
         if (blackTrack) combinedStream.addTrack(blackTrack)
       }
     } else {
-      const blackTrack = createBlackVideoTrack()
+      const blackTrack = createBlackVideoTrack(1280, 720) // Create a black track with a common resolution
       if (blackTrack) combinedStream.addTrack(blackTrack)
     }
 
     // Audio Logic
-    if (audioOptions) {
+    if (audioOptions && (audioOptions as Record<string, unknown>).deviceId) {
       try {
         const audioStream = await navigator.mediaDevices.getUserMedia({
           audio: audioOptions,
@@ -324,20 +352,17 @@ export class MediaStreamController {
     }
 
     return {
-      id: this.generateStreamId(),
       stream: combinedStream,
     }
   }
 
+  // Screen sharing logic
   stopScreenShare() {
-    if (this.currentScreenShareStream) {
-      if (this.currentScreenShareStream) {
-        this.removeLocalStream(
-          LOCAL_SCREEN_SHARE_STREAM_CONSTRAINT,
-          this.currentScreenShareStream
-        )
-        this.stopMediaStream(this.currentScreenShareStream)
-        this.currentScreenShareStream = null
+    if (this.activeScreenShareStream) {
+      if (this.activeScreenShareStream) {
+        this.removeLocalStream(LOCAL_STREAM_TYPE.SCREEN_SHARE)
+        this.stopMediaStream(this.activeScreenShareStream)
+        this.activeScreenShareStream = null
       }
     }
 
@@ -347,6 +372,7 @@ export class MediaStreamController {
     }
   }
 
+  // Starts screen sharing and sets up an event listener to detect when the user stops sharing via browser UI
   async startScreenShare() {
     const screenStream = await this.requestScreenShare()
 
@@ -356,23 +382,26 @@ export class MediaStreamController {
       }
     }
 
-    this.currentScreenShareStream = screenStream.stream
+    this.activeScreenShareStream = screenStream.stream
     this.isCurrentlySharingScreen = true
-    this.setLocalStream(
-      LOCAL_SCREEN_SHARE_STREAM_CONSTRAINT,
-      screenStream.stream
-    )
+    this.setLocalStream(LOCAL_STREAM_TYPE.SCREEN_SHARE, screenStream.stream)
 
     if (this.onScreenShareToggleCallback) {
       this.onScreenShareToggleCallback(true)
     }
   }
 
+  // Cleans up all media streams and resets state, intended to be called when the controller is no longer needed to ensure proper resource management
   destroy() {
-    this.localStreams.forEach((s) => this.stopMediaStream(s.stream))
-    this.localStreams = []
-    this.currentLocalStream = null
-    this.currentScreenShareStream = null
+    this.localStreams.forEach((stream) => {
+      if (stream) {
+        this.stopMediaStream(stream.stream)
+      }
+    })
+
+    this.localStreams = [null, null]
+    this.activeLocalMediaStream = null
+    this.activeScreenShareStream = null
     this.isCurrentlySharingScreen = false
     this.recordedChunks = []
   }
@@ -380,6 +409,7 @@ export class MediaStreamController {
   private recordedChunks: Blob[] = []
   private mediaRecorder: MediaRecorder | null = null
 
+  // Starts recording the screen using the MediaRecorder API, collecting data chunks as they become available and saving the recording when stopped
   async startRecording() {
     const displayMediaOptions = {
       video: {
@@ -410,12 +440,14 @@ export class MediaStreamController {
     }
   }
 
+  // Stops the recording and triggers the save process to download the recorded video
   stopRecording() {
     if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
       this.mediaRecorder.stop()
     }
   }
 
+  // Saves the recorded video by creating a Blob from the collected chunks, generating a download link, and triggering an automatic download for the user
   private saveRecording() {
     const blob = new Blob(this.recordedChunks, { type: "video/webm" })
     const url = URL.createObjectURL(blob)

@@ -2,10 +2,17 @@ export type CameraOpenSettings = MediaStreamConstraints["video"] & {}
 
 export type AudioOpenSettings = MediaStreamConstraints["audio"] & {}
 
-export interface MediaStreamItem<T = any> {
+export enum LOCAL_STREAM_TYPE {
+  CAMERA = "camera",
+  SCREEN_SHARE = "screen_share",
+}
+
+export type LocalStreamsTuple = [MediaStreamItem | null, MediaStreamItem | null]
+
+export interface MediaStreamItem<T = Record<string, unknown>> {
   id: string
   stream: MediaStream
-  type: "camera" | "screen_share"
+  type: LOCAL_STREAM_TYPE
   isLocal: boolean
   metadata?: T
 }

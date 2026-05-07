@@ -246,7 +246,7 @@ export default function ControlBar() {
           {/* Mute */}
           <ControlButton
             icon={
-              controller?.currentLocalStreamState.audioEnabled ? (
+              controller?.activeStreamConfiguration.audioEnabled ? (
                 <Mic className="h-4 w-4" />
               ) : (
                 <Mic className="h-4 w-4" />

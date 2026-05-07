@@ -1,5 +1,9 @@
 import WSservice from "@/lib/ws"
-import { MediaStreamItem } from "../types/service"
+import {
+  LOCAL_STREAM_TYPE,
+  LocalStreamsTuple,
+  MediaStreamItem,
+} from "../types/service"
 import { createBlackVideoTrack } from "./local"
 
 interface WebRTCServiceProps {
@@ -20,29 +24,27 @@ interface TrackMeta {
 
 interface PendingEntry {
   meta?: TrackMeta
-  track?: MediaStreamTrack
+  stream?: MediaStream
 }
 
 export class WebRTCService {
   private peerConnection: RTCPeerConnection | null = null
   private wsService: WSservice | null = null
-  private localStreams: Map<string, MediaStreamItem> = new Map()
+  private localStreams: LocalStreamsTuple = [null, null]
   private roomId: string = ""
 
   // Rendezvous map: trackId → { meta?, track? }
   // Whichever side (socket or WebRTC) arrives second triggers resolution
   private pending: Map<string, PendingEntry> = new Map()
-  private pendingInterval: NodeJS.Timeout | null = null
   private ownTrackIds: Set<string> = new Set()
-  private mapMidToStreamGroupId: Map<string, string> = new Map()
 
-  // streamGroupId → { clientId, tracks: Map<kind, track> }
+  // streamId → { clientId, meta, streams: Map<kind, MediaStream> }
   private resolvedStreams: Map<
     string,
     {
       clientId: string
       meta: TrackMeta
-      tracks: Map<string, MediaStreamTrack>
+      streams: Map<string, MediaStream>
     }
   > = new Map()
 
@@ -56,14 +58,14 @@ export class WebRTCService {
     private clientId: string,
     roomId: string,
     wsService: WSservice,
-    localStreams: MediaStreamItem[],
+    localStreams: LocalStreamsTuple,
     options?: WebRTCServiceProps
   ) {
     this.roomId = roomId
     this.wsService = wsService
 
-    localStreams.forEach((stream) => {
-      this.localStreams.set(stream.id, stream)
+    localStreams.forEach((stream, index) => {
+      this.localStreams[index] = stream
     })
 
     if (options) this.options = options
@@ -86,12 +88,264 @@ export class WebRTCService {
 
   private async init() {
     this.bindMethods()
-
     await this.createPeerConnection()
+    this.attachWSListeners()
 
+    // Ensure any initial local streams are added to the peer connection and the other side is aware of them
+    await Promise.all(
+      this.localStreams.map(async (streamItem) => {
+        if (!streamItem) return
+        await this.addStreamToPeerConnection(streamItem)
+      })
+    )
+
+    await this.sendOffer()
+  }
+
+  /**
+   * Splits a MediaStream into separate video-only and audio-only streams to work around limitations in some browsers that prevent adding tracks from the same stream more than once, allowing for better track management and renegotiation in the peer connection
+   * @param sourceStream - The source MediaStream to split
+   * @returns Object containing videoOnlyStream and audioOnlyStream
+   */
+  private async splitMediaStream(sourceStream: MediaStream) {
+    const videoOnlyStream = new MediaStream()
+    const audioOnlyStream = new MediaStream()
+
+    sourceStream.getTracks().forEach((track) => {
+      if (track.kind === "video") {
+        videoOnlyStream.addTrack(track)
+      } else if (track.kind === "audio") {
+        audioOnlyStream.addTrack(track)
+      }
+    })
+
+    return { videoOnlyStream, audioOnlyStream }
+  }
+
+  private generateStreamGroupId() {
+    return crypto.randomUUID()
+  }
+
+  private async addStreamToPeerConnection(streamItem: MediaStreamItem) {
+    const { videoOnlyStream, audioOnlyStream } = await this.splitMediaStream(
+      streamItem.stream
+    )
+
+    const streamGroupId = this.generateStreamGroupId()
+
+    videoOnlyStream.getTracks().forEach((track) => {
+      this.peerConnection?.addTrack(track, videoOnlyStream)
+
+      const meta: TrackMeta = {
+        trackId: track.id,
+        kind: track.kind,
+        clientId: this.clientId,
+        streamGroupId,
+        transceiverMid: "",
+        streamId: videoOnlyStream.id,
+        label: track.label,
+      }
+
+      this.emit("track_changed", meta)
+    })
+
+    audioOnlyStream.getTracks().forEach((track) => {
+      this.peerConnection?.addTrack(track, audioOnlyStream)
+
+      const meta: TrackMeta = {
+        trackId: track.id,
+        kind: track.kind,
+        clientId: this.clientId,
+        streamGroupId,
+        transceiverMid: "",
+        streamId: audioOnlyStream.id,
+        label: track.label,
+      }
+
+      this.emit("track_changed", meta)
+    })
+  }
+
+  private async removeStreamFromPeerConnection(stream: MediaStream) {
+    if (!this.peerConnection) return
+
+    const senders = this.peerConnection.getSenders()
+    stream.getTracks().forEach((track) => {
+      const sender = senders.find((s) => s.track === track)
+      if (sender) {
+        this.peerConnection!.removeTrack(sender)
+      }
+    })
+  }
+
+  private async createPeerConnection() {
+    this.peerConnection = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    })
+
+    // May arrive before or after new_track socket event.
+    this.peerConnection.ontrack = (event: RTCTrackEvent) => {
+      const track = event.track
+      const streamId = event.streams[0]?.id ?? ""
+
+      if (this.ownTrackIds.has(track.id)) {
+        return
+      }
+
+      if (!streamId) {
+        console.warn(
+          "Received track without stream ID, cannot correlate:",
+          track.id
+        )
+        return
+      }
+
+      const entry = this.pending.get(streamId) ?? {}
+      entry.stream = event.streams[0]
+      this.pending.set(streamId, entry)
+
+      this.tryResolve(streamId)
+    }
+
+    this.peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.emit("ice_candidate", event.candidate)
+      }
+    }
+
+    this.peerConnection.onconnectionstatechange = () => {
+      if (this.peerConnection?.connectionState === "connected") {
+        this.emit("ice_connected", this.roomId)
+      }
+    }
+
+    this.peerConnection.oniceconnectionstatechange = () => {
+      this.options.onPeerStatusChanged?.(
+        this.peerConnection?.iceConnectionState ?? "unknown"
+      )
+    }
+  }
+
+  // Called from both sides — only acts when both meta + track are present
+  private tryResolve(streamId: string) {
+    const entry = this.pending.get(streamId)
+
+    if (!entry?.meta || !entry?.stream) return // wait for the other side
+    this.pending.delete(streamId)
+
+    const { clientId, streamGroupId, kind } = entry.meta
+    const stream = entry.stream
+
+    if (!this.resolvedStreams.has(streamGroupId)) {
+      this.resolvedStreams.set(streamGroupId, {
+        clientId,
+        streams: new Map(),
+        meta: entry.meta,
+      })
+    }
+
+    const resolved = this.resolvedStreams.get(streamGroupId)!
+    resolved.streams.set(kind, stream)
+
+    this.attachOrUpdate(streamGroupId)
+  }
+
+  private attachOrUpdate(streamGroupId: string) {
+    const resolved = this.resolvedStreams.get(streamGroupId)!
+    const videoStream = resolved.streams.get("video")
+    const audioStream = resolved.streams.get("audio")
+
+    const videoTrack = videoStream?.getVideoTracks()[0]
+    const audioTrack = audioStream?.getAudioTracks()[0]
+
+    const ms = new MediaStream()
+    if (videoTrack) ms.addTrack(videoTrack)
+    if (audioTrack) ms.addTrack(audioTrack)
+
+    // fallback to a black video track if no video is provided to ensure the stream is rendered on the other side and can be used for renegotiation when a real video track is added later (e.g. user enables camera after joining)
+    if (!videoTrack) {
+      const blackTrack = createBlackVideoTrack(1280, 720)
+      if (blackTrack) {
+        ms.addTrack(blackTrack)
+      }
+    }
+
+    this.options.onAddedRemoteStream?.({
+      id: streamGroupId,
+      stream: ms,
+      type: LOCAL_STREAM_TYPE.CAMERA,
+      isLocal: false,
+    })
+  }
+
+  // Updates the local media stream in the list of local streams, either replacing the existing stream or adding a new entry if it doesn't exist, and triggers an update callback to notify of changes
+  async setLocalStreams(newStreams: LocalStreamsTuple) {
+    if (!this.peerConnection) throw new Error("Peer connection not initialized")
+
+    let isModified = false
+    const initialLocalStreams: LocalStreamsTuple = [null, null]
+
+    // Remove old streams that are not in the new set
+    for (let i = 0; i < newStreams.length; i++) {
+      const stream = newStreams[i]
+      if (!stream) continue
+
+      const isExist = this.localStreams.some((s) => s?.id === stream.id)
+
+      if (isExist) {
+        initialLocalStreams[i] = stream
+        continue
+      }
+
+      const streamID = stream.stream.id
+      this.emit("track_removed", streamID)
+      this.options.onRemovedRemoteStream?.(streamID)
+      isModified = true
+    }
+
+    // Add new streams (or update existing ones)
+    Promise.all(
+      initialLocalStreams
+        .filter((stream) => !!stream)
+        .map(async (stream) => {
+          const isExist = this.localStreams.some((s) => s?.id === stream!.id)
+          if (isExist) return stream!
+
+          await this.addStreamToPeerConnection(stream)
+          isModified = true
+          return stream!
+        })
+    ).catch((err) => {
+      console.error("Failed to add local stream to peer connection:", err)
+    })
+
+    if (isModified) {
+      this.sendOffer().catch((err) => {
+        console.error("Failed to renegotiate after local stream change:", err)
+      })
+    }
+
+    this.localStreams = initialLocalStreams
+  }
+
+  // send a renegotiation offer to the other peer whenever local stream changes (e.g. user toggles camera/mic or starts/stops screen share) so the new tracks are added/removed on the other side and the connection is kept up to date with the current state of local media
+  private async sendOffer() {
+    if (!this.peerConnection) throw new Error("Peer connection not initialized")
+    const offer = await this.peerConnection.createOffer()
+    await this.peerConnection.setLocalDescription(offer)
+    this.emit("send_offer", offer)
+  }
+
+  // Simple wrapper around emit to ensure clientId and roomId are always included and to provide better type safety
+  private emit(eventName: string, data: unknown) {
+    if (!this.wsService || !this.roomId) {
+      throw new Error("Socket or room ID not initialized")
+    }
+    this.wsService.emit(eventName, this.clientId, data)
+  }
+
+  private attachWSListeners() {
     this.wsService?.on("new_track", (clientId: string, meta: TrackMeta) => {
-      console.log("Received new track meta:", { ...meta })
-
       if (this.clientId === clientId) {
         this.ownTrackIds.add(meta.trackId)
         return
@@ -120,9 +374,26 @@ export class WebRTCService {
         .map(([key]) => key)
 
       for (const streamGroupId of clientsStreamsGroupId) {
+        const resolved = this.resolvedStreams.get(streamGroupId)
+
+        if (resolved) {
+          resolved.streams.forEach((stream) => {
+            this.removeStreamFromPeerConnection(stream).catch((err) => {
+              console.error(
+                "Failed to remove stream from peer connection:",
+                err
+              )
+            })
+          })
+        }
+
         this.resolvedStreams.delete(streamGroupId)
         this.options.onRemovedRemoteStream?.(streamGroupId)
       }
+
+      this.sendOffer().catch((err) => {
+        console.error("Failed to renegotiate after peer left:", err)
+      })
     })
 
     this.wsService?.on(
@@ -150,284 +421,24 @@ export class WebRTCService {
       }
     )
 
-    this.wsService?.on("track_removed", (mid: string) => {
-      const streamGroupId = this.mapMidToStreamGroupId.get(mid) ?? ""
+    this.wsService?.on("track_removed", (streamGroupId: string) => {
       const resolved = this.resolvedStreams.get(streamGroupId)
 
       if (resolved) {
+        resolved.streams.forEach((stream) => {
+          this.removeStreamFromPeerConnection(stream).catch((err) => {
+            console.error("Failed to remove stream from peer connection:", err)
+          })
+        })
+
         this.resolvedStreams.delete(streamGroupId)
         this.options.onRemovedRemoteStream?.(streamGroupId)
-      }
-    })
 
-    await this.sendOffer()
-  }
-
-  private async splitMediaStream(sourceStream: MediaStream) {
-    const videoOnlyStream = new MediaStream()
-    const audioOnlyStream = new MediaStream()
-
-    sourceStream.getTracks().forEach((track) => {
-      if (track.kind === "video") {
-        videoOnlyStream.addTrack(track)
-      } else if (track.kind === "audio") {
-        audioOnlyStream.addTrack(track)
-      }
-    })
-
-    return { videoOnlyStream, audioOnlyStream }
-  }
-
-  private async createPeerConnection() {
-    this.peerConnection = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    })
-
-    // Add local tracks
-    await Promise.all(
-      Array.from(this.localStreams.values()).map(async (streamItem) => {
-        const { videoOnlyStream, audioOnlyStream } =
-          await this.splitMediaStream(streamItem.stream)
-
-        videoOnlyStream.getTracks().forEach((track) => {
-          this.peerConnection?.addTrack(track, videoOnlyStream)
-
-          const meta: TrackMeta = {
-            trackId: track.id,
-            kind: track.kind,
-            clientId: this.clientId,
-            streamGroupId: streamItem.id,
-            transceiverMid: "",
-            streamId: videoOnlyStream.id,
-            label: track.label,
-          }
-
-          this.emit("track_changed", meta)
+        this.sendOffer().catch((err) => {
+          console.error("Failed to renegotiate after track removal:", err)
         })
-
-        audioOnlyStream.getTracks().forEach((track) => {
-          this.peerConnection?.addTrack(track, audioOnlyStream)
-
-          const meta: TrackMeta = {
-            trackId: track.id,
-            kind: track.kind,
-            clientId: this.clientId,
-            streamGroupId: streamItem.id,
-            transceiverMid: "",
-            streamId: audioOnlyStream.id,
-            label: track.label,
-          }
-
-          this.emit("track_changed", meta)
-        })
-      })
-    )
-
-    // ── WebRTC side of rendezvous ──────────────────────────────────
-    // May arrive before or after new_track socket event.
-    this.peerConnection.ontrack = (event: RTCTrackEvent) => {
-      const track = event.track
-      const streamId = event.streams[0]?.id ?? ""
-
-      console.log("Received new track:", {
-        trackId: track.id,
-        kind: track.kind,
-        label: track.label,
-        streamId,
-      })
-
-      if (this.ownTrackIds.has(track.id)) {
-        return
       }
-
-      if (!streamId) {
-        console.warn(
-          "Received track without stream ID, cannot correlate:",
-          track.id
-        )
-        return
-      }
-
-      const entry = this.pending.get(streamId) ?? {}
-      entry.track = track
-      this.pending.set(streamId, entry)
-
-      this.tryResolve(streamId)
-    }
-
-    this.peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        this.emit("ice_candidate", event.candidate)
-      }
-    }
-
-    this.peerConnection.onconnectionstatechange = () => {
-      if (this.peerConnection?.connectionState === "connected") {
-        this.emit("ice_connected", this.roomId)
-      }
-    }
-
-    this.peerConnection.oniceconnectionstatechange = () => {
-      this.options.onPeerStatusChanged?.(
-        this.peerConnection?.iceConnectionState ?? "unknown"
-      )
-    }
-  }
-
-  // Called from both sides — only acts when both meta + track are present
-  private tryResolve(mid: string) {
-    const entry = this.pending.get(mid)
-
-    if (!entry?.meta || !entry?.track) return // wait for the other side
-
-    this.pending.delete(mid)
-
-    const { clientId, streamGroupId, kind } = entry.meta
-    const track = entry.track
-
-    this.mapMidToStreamGroupId.set(mid, streamGroupId)
-
-    if (!this.resolvedStreams.has(streamGroupId)) {
-      this.resolvedStreams.set(streamGroupId, {
-        clientId,
-        tracks: new Map(),
-        meta: entry.meta,
-      })
-    }
-
-    const resolved = this.resolvedStreams.get(streamGroupId)!
-    resolved.tracks.set(kind, track)
-
-    this.attachOrUpdate(streamGroupId)
-  }
-
-  private intervalId: NodeJS.Timeout | null = null
-  private attachOrUpdate(streamGroupId: string) {
-    const resolved = this.resolvedStreams.get(streamGroupId)!
-    const videoTrack = resolved.tracks.get("video")
-    const audioTrack = resolved.tracks.get("audio")
-
-    const ms = new MediaStream()
-    if (videoTrack) ms.addTrack(videoTrack)
-    if (audioTrack) ms.addTrack(audioTrack)
-
-    if (!videoTrack) {
-      const blackTrack = createBlackVideoTrack()
-      if (blackTrack) {
-        ms.addTrack(blackTrack)
-      }
-    }
-
-    this.options.onAddedRemoteStream?.({
-      id: streamGroupId,
-      stream: ms,
-      type: "camera",
-      isLocal: false,
     })
-
-    const pc = this.peerConnection
-    if (!pc) return
-
-    if (this.intervalId) {
-      clearInterval(this.intervalId)
-    }
-
-    pc.getReceivers().forEach((r) => {
-      console.log(r.track?.kind, r.getParameters().codecs)
-    })
-  }
-
-  async setLocalStreams(newStreams: MediaStreamItem[]) {
-    if (!this.peerConnection) throw new Error("Peer connection not initialized")
-
-    const newStreamsIds = new Set(newStreams.map((s) => s.id))
-    let hasChanged = false
-    const newStreamsMap = new Map<string, MediaStreamItem>()
-
-    for (const stream of Array.from(this.localStreams.values()).concat(
-      newStreams
-    )) {
-      if (newStreamsIds.has(stream.id)) {
-        newStreamsMap.set(stream.id, stream)
-        continue
-      }
-
-      const streamID = stream.stream.id
-
-      hasChanged = true
-
-      this.emit("track_removed", streamID)
-
-      if (this.options.onRemovedRemoteStream) {
-        this.options.onRemovedRemoteStream(streamID)
-      }
-    }
-
-    await Promise.all(
-      Array.from(newStreamsMap.values()).map(async (streamItem) => {
-        if (this.localStreams.has(streamItem.id)) {
-          return
-        }
-
-        hasChanged = true
-        const { videoOnlyStream, audioOnlyStream } =
-          await this.splitMediaStream(streamItem.stream)
-
-        videoOnlyStream.getTracks().forEach((track) => {
-          this.peerConnection?.addTrack(track, videoOnlyStream)
-
-          const meta: TrackMeta = {
-            trackId: track.id,
-            kind: track.kind,
-            clientId: this.clientId,
-            streamGroupId: streamItem.id,
-            transceiverMid: "",
-            streamId: videoOnlyStream.id,
-            label: track.label,
-          }
-
-          this.emit("track_changed", meta)
-        })
-
-        audioOnlyStream.getTracks().forEach((track) => {
-          this.peerConnection?.addTrack(track, audioOnlyStream)
-
-          const meta: TrackMeta = {
-            trackId: track.id,
-            kind: track.kind,
-            clientId: this.clientId,
-            streamGroupId: streamItem.id,
-            transceiverMid: "",
-            streamId: audioOnlyStream.id,
-            label: track.label,
-          }
-
-          this.emit("track_changed", meta)
-        })
-      })
-    )
-
-    if (hasChanged) {
-      this.sendOffer().catch((err) => {
-        console.error("Failed to renegotiate after local stream change:", err)
-      })
-    }
-
-    this.localStreams = newStreamsMap
-  }
-
-  private async sendOffer() {
-    if (!this.peerConnection) throw new Error("Peer connection not initialized")
-    const offer = await this.peerConnection.createOffer()
-    await this.peerConnection.setLocalDescription(offer)
-    this.emit("send_offer", offer)
-  }
-
-  private emit(eventName: string, data: unknown) {
-    if (!this.wsService || !this.roomId) {
-      throw new Error("Socket or room ID not initialized")
-    }
-    this.wsService.emit(eventName, this.clientId, data)
   }
 
   destroy() {
@@ -438,5 +449,6 @@ export class WebRTCService {
     this.wsService?.off("receive_answer")
     this.wsService?.off("ice_candidate")
     this.wsService?.off("new_track")
+    this.wsService?.off("track_removed")
   }
 }

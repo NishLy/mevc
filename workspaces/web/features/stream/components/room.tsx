@@ -2,7 +2,7 @@
 
 import ControlBar from "@/features/stream/components/control_bar"
 import VideosGrid from "@/features/stream/components/video_grid"
-import { use, useEffect, useRef, useState } from "react"
+import { useEffect } from "react"
 import { MediaStreamController } from "../services/local"
 import useMeet from "../state/meet"
 import { WebRTCService } from "../services/rtc"
@@ -12,15 +12,12 @@ import ChatTabs from "./chat"
 import JoiningVariant from "./loadings/join"
 import ReconnectingVariant from "./loadings/rejoin"
 import MeetClosedVariant from "./loadings/closed"
-import { disconnect } from "node:cluster"
 
 interface RoomProps {
   roomId: string
 }
 
-const dummyClientId =
-  window.location.search.split("client_id=")[1] ||
-  "client_" + Math.random().toString(36).substr(2, 9)
+const dummyClientId = "client_" + Math.random().toString(36).substr(2, 9)
 
 console.log("Generated dummy client ID:", dummyClientId)
 
@@ -68,7 +65,7 @@ export default function Room({ roomId }: RoomProps) {
     setRTCService,
   } = useMeet()
 
-  console.log("Room component rendered with status:", status)
+  console.log("Room component rendered with status:", status, localStreams)
 
   useEffect(() => {
     const ws = new WSservice({
@@ -108,7 +105,7 @@ export default function Room({ roomId }: RoomProps) {
 
   useEffect(() => {
     if (
-      localStreams.length === 0 ||
+      (localStreams[0] === null && localStreams[1] === null) ||
       status !== MeetConnectionState.SessionCreated ||
       !ws
     ) {
@@ -116,9 +113,6 @@ export default function Room({ roomId }: RoomProps) {
     }
 
     if (RTCService) {
-      console.warn(
-        "WebRTC service already initialized. Skipping re-initialization."
-      )
       return
     }
 
@@ -162,13 +156,6 @@ export default function Room({ roomId }: RoomProps) {
           if (peerStatus === "disconnected" || peerStatus === "failed") {
             webRTCService.destroy()
             setRTCService(null)
-
-            console.warn(
-              "Peer connection lost. Status:",
-              peerStatus,
-              useMeet.getState().status
-            )
-
             if (useMeet.getState().status === MeetConnectionState.Connected) {
               setCurrentStatus(MeetConnectionState.Disconnected)
             }
@@ -176,8 +163,6 @@ export default function Room({ roomId }: RoomProps) {
           if (peerStatus === "connected") {
             setCurrentStatus(MeetConnectionState.Connected)
           }
-
-          console.log("Peer connection status changed:", peerStatus)
         },
       }
     )
