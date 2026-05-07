@@ -39,6 +39,7 @@ type SessionTracks struct {
 type Session interface {
 	GetPeerConnection() *webrtc.PeerConnection
 	GetClientId() string
+	GetUsername() string
 	Close()
 	SetRemoteSet(bool)
 	GetMutex() *sync.Mutex
@@ -61,7 +62,7 @@ type WaitTrackResult struct {
 type session struct {
 	pc *webrtc.PeerConnection
 	// transceivers         []*ManagedTransceiver
-	clientId           string
+	ClientID           string `json:"clientId"`
 	mu                 sync.Mutex
 	remoteSet          bool
 	remoteTracks       map[string]SessionTrack
@@ -69,20 +70,26 @@ type session struct {
 	emitFn             func(event string, data ...any)
 	offerWaitChan      chan bool
 	selfTracksMetadata map[string]SessionTrackMetadata
+	Username           string `json:"userName"`
 }
 
-func NewSession(clientID string, pc *webrtc.PeerConnection) Session {
+func NewSession(pc *webrtc.PeerConnection, clientID string, userName string) Session {
 
 	return &session{
 		pc:                 pc,
-		clientId:           clientID,
+		ClientID:           clientID,
 		mu:                 sync.Mutex{},
+		Username:           userName,
 		remoteSet:          false,
 		remoteTracks:       make(map[string]SessionTrack),
 		closed:             false,
 		offerWaitChan:      make(chan bool, 1),
 		selfTracksMetadata: make(map[string]SessionTrackMetadata),
 	}
+}
+
+func (s *session) GetUsername() string {
+	return s.Username
 }
 
 func (s *session) IsRemoteSet() bool {
@@ -151,7 +158,7 @@ func (s *session) AddRemoteTrackStream(trackID string, track *webrtc.TrackRemote
 }
 
 func (s *session) GetClientId() string {
-	return s.clientId
+	return s.ClientID
 }
 
 func (s *session) GetOfferWaitChan() chan bool {
@@ -257,7 +264,7 @@ func (s *session) Renegotiate(attempt *int) (err error) {
 		return
 	}
 
-	emitFn("new_offer", s.clientId, offer)
+	emitFn("new_offer", s.ClientID, offer)
 	return nil
 }
 

@@ -57,10 +57,16 @@ export interface MediaStreamOptions {
 export enum MeetConnectionState {
   New = "new",
   Checking = "checking",
+  Lobby = "lobby",
   SessionCreated = "session_created",
   Connected = "connected",
   Completed = "completed",
   Disconnected = "disconnected",
   Unknown = "unknown",
   Reconnecting = "reconnecting",
+}
+
+export interface IUser {
+  id: string
+  username: string
 }

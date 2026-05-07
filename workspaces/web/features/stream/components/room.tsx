@@ -7,7 +7,11 @@ import { MediaStreamController } from "../services/local"
 import useMeet from "../state/meet"
 import { WebRTCService } from "../services/rtc"
 import WSservice from "@/lib/ws"
-import { MediaCombinedStream, MeetConnectionState } from "../types/service"
+import {
+  IUser,
+  MediaCombinedStream,
+  MeetConnectionState,
+} from "../types/service"
 import ChatTabs from "./chat"
 import JoiningVariant from "./loadings/join"
 import ReconnectingVariant from "./loadings/rejoin"
@@ -22,6 +26,7 @@ const RenderLoading = (status: MeetConnectionState) => {
     [
       MeetConnectionState.New,
       MeetConnectionState.Checking,
+      MeetConnectionState.Lobby,
       MeetConnectionState.SessionCreated,
     ].includes(status)
   ) {
@@ -61,6 +66,7 @@ export default function Room({ roomId }: RoomProps) {
     setWSservice,
     setRoomID,
     setRTCService,
+    setParticipantsInLobby,
   } = useMeet()
 
   console.log("Room component rendered with status:", status, localStreams)
@@ -75,12 +81,17 @@ export default function Room({ roomId }: RoomProps) {
         autoConnect: true,
         listeners: {
           connect: () => {
-            ws.emit("join_room", clientId, roomId)
+            ws.emit("join_room", clientId, roomId, userName)
+          },
+          joined_lobby: (joinedRoomId: string, participants: IUser[]) => {
+            if (joinedRoomId === roomId) {
+              setCurrentStatus(MeetConnectionState.Lobby)
+              setParticipantsInLobby(participants)
+            }
           },
           joined_room: (joinedRoomId: string) => {
             if (joinedRoomId === roomId) {
               setRoomID(roomId)
-
               setCurrentStatus(MeetConnectionState.SessionCreated)
             }
           },

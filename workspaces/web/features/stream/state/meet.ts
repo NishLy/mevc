@@ -1,5 +1,6 @@
 import { create } from "zustand/react"
 import {
+  IUser,
   LocalStreamsTuple,
   MediaCombinedStream,
   MeetConnectionState,
@@ -33,6 +34,8 @@ interface MeetState {
   status: MeetConnectionState
   RTCService: WebRTCService | null
   ws: WSservice | null
+  lobbyParticipants: IUser[]
+  setParticipantsInLobby: (participants: IUser[]) => void
   setRoomID: (roomId: string) => void
   setCurrentStatus: (status: MeetConnectionState) => void
   setWSservice: (service: WSservice | null) => void
@@ -63,6 +66,9 @@ const useMeet = create<MeetState>((set) => ({
   status: MeetConnectionState.New,
   RTCService: null,
   ws: null,
+  lobbyParticipants: [],
+  setParticipantsInLobby: (participants: IUser[]) =>
+    set({ lobbyParticipants: participants }),
   setRoomID: (roomId) => set({ roomId }),
   setCurrentStatus: (status) => set({ status }),
   setWSservice: (service: WSservice | null) => set({ ws: service }),

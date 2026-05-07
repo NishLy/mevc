@@ -1,6 +1,10 @@
 import { Badge } from "@/components/ui/badge"
 import classNames from "classnames"
 import { motion } from "framer-motion"
+import { MeetConnectionState } from "../../types/service"
+import useMeet from "../../state/meet"
+import { useMemo } from "react"
+import { generateInitials } from "@/lib/strings"
 
 const Avatar = ({
   initials,
@@ -80,16 +84,41 @@ const SpinRing = ({
   </div>
 )
 
+const getSteps = (status: MeetConnectionState) => {
+  switch (status) {
+    case MeetConnectionState.Checking:
+      return [{ id: 1, label: "Checking permissions", done: true }]
+    case MeetConnectionState.Lobby:
+      return [
+        { id: 1, label: "Checking permissions", done: true },
+        { id: 3, label: "Waiting for approval", done: false, active: true },
+      ]
+    case MeetConnectionState.SessionCreated:
+      return [
+        { id: 1, label: "Checking permissions", done: true },
+        { id: 2, label: "Joining meeting room", done: true },
+        { id: 3, label: "Connecting to session", done: false, active: true },
+      ]
+    default:
+      return [{ id: 1, label: "Checking permissions", done: true }]
+  }
+}
+
 const JoiningVariant = () => {
-  const steps = [
-    { id: 1, label: "Checking permissions", done: true },
-    { id: 2, label: "Joining meeting room", done: true },
-    { id: 3, label: "Connecting to session", done: false, active: true },
-    { id: 4, label: "Loading participants", done: false },
-  ]
+  const { lobbyParticipants, status } = useMeet()
+  const steps = getSteps(status)
+
+  const participants = useMemo(() => {
+    return lobbyParticipants?.map((p, index) => ({
+      ...p,
+      initials: generateInitials(p.username, 3),
+      angle: -90 + (index / lobbyParticipants.length) * 360,
+      delay: index * 0.3,
+    }))
+  }, [lobbyParticipants])
 
   return (
-    <div className="flex flex-col items-center justify-center gap-8 py-10">
+    <div className="flex flex-col items-center justify-center gap-8 py-10 text-lg font-medium">
       {/* Avatar cluster */}
       <div className="relative flex items-center justify-center">
         <motion.div
@@ -99,16 +128,12 @@ const JoiningVariant = () => {
         >
           <SpinRing size={88} color="#6366f1" thickness={2.5} speed={2} />
           <div className="absolute inset-0 flex items-center justify-center">
-            <Avatar initials="YO" pulse />
+            <Avatar initials="YOU" pulse />
           </div>
         </motion.div>
 
         {/* Floating mini-avatars */}
-        {[
-          { initials: "AK", angle: -50, delay: 0 },
-          { initials: "BL", angle: 30, delay: 0.3 },
-          { initials: "CR", angle: 110, delay: 0.6 },
-        ].map(({ initials, angle, delay }, i) => {
+        {participants.map(({ initials, angle, delay }, i) => {
           const rad = (angle * Math.PI) / 180
           const r = 62
           const x = Math.cos(rad) * r
@@ -126,7 +151,7 @@ const JoiningVariant = () => {
                 stiffness: 200,
               }}
             >
-              <Avatar initials={initials} size="sm" />
+              <Avatar initials={initials} />
             </motion.div>
           )
         })}
@@ -154,14 +179,14 @@ const JoiningVariant = () => {
 
       {/* Steps */}
       <motion.div
-        className="w-full max-w-[240px] space-y-2.5"
+        className="flex w-full max-w-xs flex-col justify-center space-y-2.5"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.6 }}
       >
         {steps.map((s, i) => (
-          <div key={s.id} className="flex items-center gap-3">
-            <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
+          <div key={s.id} className="flex items-center justify-center gap-3">
+            <div className="flex h-5 w-5 items-center justify-center">
               {s.done ? (
                 <motion.div
                   initial={{ scale: 0 }}
@@ -205,9 +230,11 @@ const JoiningVariant = () => {
         ))}
       </motion.div>
 
-      <Badge color="indigo">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400" />
-        3 participants waiting
+      <Badge color="indigo" className="w-full p-2">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
+        {lobbyParticipants.length}{" "}
+        {lobbyParticipants.length === 1 ? "participant" : "participants"}{" "}
+        Waiting in Lobby
       </Badge>
     </div>
   )

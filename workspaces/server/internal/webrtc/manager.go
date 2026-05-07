@@ -2,12 +2,14 @@ package rtc
 
 import (
 	"sync"
+
+	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 )
 
 type SessionManager interface {
 	GetGroupId() string
 
-	AddSession(session Session, wsID string)
+	AddSession(session Session, wsID string) bool
 	GetSession(clientId string) (Session, bool)
 	GetSessions() []Session
 
@@ -20,6 +22,10 @@ type SessionManager interface {
 	GetRouter(streamID string) (*TrackRouter, bool)
 	RemoveRouter(streamID string)
 
+	MoveToRoom(session Session)
+	KickFromLoby(session Session)
+	GetLobbySessions() []LobySession
+
 	// AddTemporaryMetadata(streamID string, metadata SessionTrackMetadata)
 	// GetTemporaryMetadata(streamID string) (SessionTrackMetadata, bool)
 	// RemoveTemporaryMetadata(streamID string)
@@ -29,24 +35,67 @@ type SessionManager interface {
 	RemoveFromSessionManager(clientID string)
 }
 
+type LobySession struct {
+	wsID    string
+	session Session
+}
+
 type sessionManager struct {
 	id           string
 	sessions     map[string]Session
 	wsToClientId map[string]string
 	routers      map[string]*TrackRouter
-	// temporaryMetadata map[string]SessionTrackMetadata
-	mu sync.RWMutex
+	autoClose    bool
+	autoAccept   bool
+	lobby        map[string]LobySession
+	mu           sync.RWMutex
 }
 
-func NewSessionManager(id string) SessionManager {
+func NewSessionManager(id string, autoAccept bool) SessionManager {
 	return &sessionManager{
 		id:           id,
 		sessions:     make(map[string]Session),
 		wsToClientId: make(map[string]string),
 		routers:      make(map[string]*TrackRouter),
-		// temporaryMetadata: make(map[string]SessionTrackMetadata),
-		mu: sync.RWMutex{},
+		autoClose:    true,
+		autoAccept:   autoAccept,
+		lobby:        make(map[string]LobySession),
+		mu:           sync.RWMutex{},
 	}
+}
+
+func (sm *sessionManager) GetLobbySessions() []LobySession {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	lobbySessions := make([]LobySession, 0, len(sm.lobby))
+
+	for _, lobbySession := range sm.lobby {
+		lobbySessions = append(lobbySessions, lobbySession)
+	}
+	return lobbySessions
+}
+
+func (sm *sessionManager) MoveToRoom(session Session) {
+	sm.mu.Lock()
+	lobbySession, exist := sm.lobby[session.GetClientId()]
+	if !exist {
+		logger.Sugar.Warnf("No lobby session found for client %s, rejecting session", session.GetClientId())
+	}
+
+	delete(sm.lobby, session.GetClientId())
+	sm.mu.Unlock()
+	sm.AddSession(lobbySession.session, lobbySession.wsID)
+}
+
+func (sm *sessionManager) KickFromLoby(session Session) {
+	sm.mu.Lock()
+	_, exist := sm.lobby[session.GetClientId()]
+	if !exist {
+		return
+	}
+	delete(sm.lobby, session.GetClientId())
+	sm.mu.Unlock()
+	session.Close()
 }
 
 func (sm *sessionManager) GetGroupId() string {
@@ -70,11 +119,22 @@ func (sm *sessionManager) GetSession(clientId string) (Session, bool) {
 	return session, exists
 }
 
-func (sm *sessionManager) AddSession(session Session, wsID string) {
+func (sm *sessionManager) AddSession(session Session, wsID string) bool {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	sm.sessions[session.GetClientId()] = session
+
 	sm.wsToClientId[wsID] = session.GetClientId()
+	if !sm.autoAccept {
+		sm.lobby[session.GetClientId()] = LobySession{
+			wsID:    wsID,
+			session: session,
+		}
+		logger.Sugar.Infof("Added session for client %s to lobby", session.GetClientId())
+		return false
+	}
+
+	sm.sessions[session.GetClientId()] = session
+	return true
 }
 
 func (sm *sessionManager) CloseAll() error {
@@ -98,10 +158,22 @@ func (sm *sessionManager) GetClientIDFromWsID(wsID string) (string, bool) {
 func (sm *sessionManager) GetSessionByWsID(wsID string) (Session, bool) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
+
 	clientID, exists := sm.wsToClientId[wsID]
 	if !exists {
 		return nil, false
 	}
+
+	lobbySession, existInLobby := sm.lobby[clientID]
+	_, existInSessions := sm.sessions[clientID]
+
+	if existInLobby {
+		return lobbySession.session, true
+	}
+	if !existInSessions {
+		return nil, false
+	}
+
 	session, exists := sm.sessions[clientID]
 	return session, exists
 }

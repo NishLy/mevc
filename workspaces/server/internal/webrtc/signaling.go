@@ -19,6 +19,7 @@ func HandleDisconnect(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
+	sessionManager.KickFromLoby(session)
 	sessionManager.RemoveFromSessionManager(session.GetClientId())
 
 	hub.EmitTo(sessionManager.GetGroupId(), "peer_left", nil, session.GetClientId())
@@ -26,25 +27,23 @@ func HandleDisconnect(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 
 func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	clientID, ok := data[0].(string)
-
-	if !ok || clientID == "" {
-		return
-	}
-
 	roomId, ok := data[1].(string)
-	if !ok || roomId == "" {
+	userName, ok2 := data[2].(string)
+
+	if !ok || !ok2 || clientID == "" || roomId == "" || userName == "" {
+		logger.Sugar.Warnf("Invalid join room data: %v", data)
 		return
 	}
 
 	hub.Join(roomId, conn)
 
 	if GetGroupManagerFromConn(conn) == nil {
-		GlobalSessionManager[roomId] = NewSessionManager(roomId)
+		GlobalSessionManager[roomId] = NewSessionManager(roomId, true)
 	}
 	sessionManager := GlobalSessionManager[roomId]
 	pc := MustCreatePeerConnection()
 
-	session := NewSession(clientID, pc)
+	session := NewSession(pc, clientID, userName)
 
 	session.SetEmitFunc(func(event string, args ...any) {
 		conn.Emit(event, args...)
@@ -53,9 +52,22 @@ func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	// AttachExistingStreams(sessionManager, session)
 	RegisterSessionPCListeners(hub, sessionManager, session, conn)
 
-	sessionManager.AddSession(session, conn.ID())
+	if !sessionManager.AddSession(session, conn.ID()) {
+		participants := sessionManager.GetLobbySessions()
+		participantsData := make([]map[string]string, len(participants))
 
-	conn.Emit("joined_room", roomId)
+		for i, p := range participants {
+			participantsData[i] = map[string]string{
+				"clientId": p.session.GetClientId(),
+				"username": p.session.GetUsername(),
+			}
+		}
+
+		conn.Emit("joined_lobby", roomId, participantsData)
+		return
+	} else {
+		conn.Emit("joined_room", roomId)
+	}
 }
 
 func HandleLeaveRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
@@ -75,6 +87,7 @@ func HandleLeaveRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 		return
 	}
 
+	sessionManager.KickFromLoby(session)
 	sessionManager.RemoveFromSessionManager(session.GetClientId())
 
 	hub.EmitTo(sessionManager.GetGroupId(), "peer_left", nil, session.GetClientId())
