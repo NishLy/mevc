@@ -89,12 +89,12 @@ func (sm *sessionManager) MoveToRoom(session Session) {
 
 func (sm *sessionManager) KickFromLoby(session Session) {
 	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	_, exist := sm.lobby[session.GetClientId()]
 	if !exist {
 		return
 	}
 	delete(sm.lobby, session.GetClientId())
-	sm.mu.Unlock()
 	session.Close()
 }
 

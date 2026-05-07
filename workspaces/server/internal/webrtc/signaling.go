@@ -52,7 +52,9 @@ func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	// AttachExistingStreams(sessionManager, session)
 	RegisterSessionPCListeners(hub, sessionManager, session, conn)
 
-	if !sessionManager.AddSession(session, conn.ID()) {
+	joined := sessionManager.AddSession(session, conn.ID())
+
+	if !joined {
 		participants := sessionManager.GetLobbySessions()
 		participantsData := make([]map[string]string, len(participants))
 

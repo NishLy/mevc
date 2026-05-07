@@ -230,12 +230,14 @@ const JoiningVariant = () => {
         ))}
       </motion.div>
 
-      <Badge color="indigo" className="w-full p-2">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
-        {lobbyParticipants.length}{" "}
-        {lobbyParticipants.length === 1 ? "participant" : "participants"}{" "}
-        Waiting in Lobby
-      </Badge>
+      {status === MeetConnectionState.Lobby && (
+        <Badge color="indigo" className="w-full p-2">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
+          {lobbyParticipants.length}{" "}
+          {lobbyParticipants.length === 1 ? "participant" : "participants"}{" "}
+          Waiting in Lobby
+        </Badge>
+      )}
     </div>
   )
 }
