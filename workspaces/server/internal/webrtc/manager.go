@@ -247,20 +247,21 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 		return
 	}
 
-	session.Close()
-
 	var routersToClose []string
 
 	sm.mu.RLock()
-	for _, router := range sm.routers {
+	for id, router := range sm.routers {
 		if router.publisherID == session.GetClientId() {
-			if router.incomingTrack != nil {
-				routersToClose = append(routersToClose, router.incomingTrack.StreamID())
-			}
+			routersToClose = append(routersToClose, id)
+		}
+		// Remove the viewer from all routers
+		if err := router.RemoveViewer(clientID); err != nil {
+			logger.Sugar.Warnf("Failed to remove viewer %s from router for stream %s: %v", clientID, router.incomingTrack.StreamID(), err)
 		}
 	}
 	sm.mu.RUnlock()
 
+	// Now close all routers where this client was the publisher
 	for _, trackId := range routersToClose {
 		sm.RemoveRouter(trackId)
 	}
@@ -273,8 +274,11 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 	}
 
 	delete(sm.sessions, clientID)
+	session.Close()
 
 	if len(sm.GetSessions()) == 0 {
 		delete(GlobalSessionManager, sm.GetGroupId())
 	}
+
+	logger.Sugar.Infof("Removed session for client %s", clientID)
 }

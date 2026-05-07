@@ -23,7 +23,10 @@ export class WebRTCService {
   // Rendezvous map: trackId → { meta?, track? }
   // Whichever side (socket or WebRTC) arrives second triggers resolution
   private pending: Map<string, PendingEntry> = new Map()
-  private ownTrackIds: Set<string> = new Set()
+  private generatedStreamIds: Map<
+    string,
+    { audio: string | null; video: string | null }
+  > = new Map() // client-generated streamId → generated streamId for correlating tracks that arrive before the stream is fully ready
 
   // streamId → { clientId, meta, streams: Map<kind, MediaStream> }
   private resolvedStreams: Map<
@@ -167,6 +170,12 @@ export class WebRTCService {
 
       this.emit("track_changed", meta)
     })
+
+    // Store the generated stream group ID to correlate with incoming tracks that arrive before the stream is fully ready
+    this.generatedStreamIds.set(streamGroupId, {
+      audio: audioOnlyStream?.id || null,
+      video: videoOnlyStream?.id || null,
+    })
   }
 
   private async removeStreamFromPeerConnection(stream: MediaStream) {
@@ -190,10 +199,6 @@ export class WebRTCService {
     this.peerConnection.ontrack = (event: RTCTrackEvent) => {
       const track = event.track
       const streamId = event.streams[0]?.id ?? ""
-
-      if (this.ownTrackIds.has(track.id)) {
-        return
-      }
 
       console.log(
         "Received new track event from peer with track ID:",
@@ -348,12 +353,24 @@ export class WebRTCService {
 
           if (existingStream) {
             for (const meta in existingStream.metadata) {
-              if (!meta) continue
+              const value =
+                existingStream.metadata[
+                  meta as keyof typeof existingStream.metadata
+                ]
+
+              if (!value) continue
+
+              const generatedIds = this.generatedStreamIds.get(
+                value.streamGroupId
+              )
 
               const alteredMeta: TrackMeta = {
-                ...existingStream.metadata[
-                  meta as keyof typeof existingStream.metadata
-                ]!,
+                ...value,
+                streamId: generatedIds
+                  ? meta === "video"
+                    ? generatedIds.video || value.streamId
+                    : generatedIds.audio || value.streamId
+                  : value.streamId,
                 enabled:
                   meta === "video"
                     ? stream!.isVideoEnabled
@@ -403,7 +420,6 @@ export class WebRTCService {
     this.wsService?.on("new_track", (clientId: string, meta: TrackMeta) => {
       console.log("Received new_track event with meta:", meta)
       if (this.clientId === clientId) {
-        this.ownTrackIds.add(meta.trackId)
         return
       }
 

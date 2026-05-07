@@ -13,6 +13,7 @@ import (
 type Viewer struct {
 	session Session
 	track   *webrtc.TrackLocalStaticRTP
+	sender  *webrtc.RTPSender
 }
 
 // TrackRouter handles a single incoming stream and broadcasts it to many viewers
@@ -81,6 +82,10 @@ func (r *TrackRouter) AddViewer(viewerSession Session) error {
 	r.Lock()
 	defer r.Unlock()
 
+	if viewerSession.GetClientId() == r.publisherID {
+		return fmt.Errorf("publisher cannot be a viewer of their own stream")
+	}
+
 	if _, exists := r.viewers[viewerSession.GetClientId()]; exists {
 		return fmt.Errorf("viewer already exists")
 	}
@@ -103,7 +108,8 @@ func (r *TrackRouter) AddViewer(viewerSession Session) error {
 	}
 
 	// 2. Add it to the viewer's PeerConnection
-	if _, err := viewerPC.AddTransceiverFromTrack(localTrack); err != nil {
+	rtpSender, err := viewerPC.AddTrack(localTrack) // AddTrack is simpler if you don't need transceiver control
+	if err != nil {
 		return err
 	}
 
@@ -111,6 +117,7 @@ func (r *TrackRouter) AddViewer(viewerSession Session) error {
 	r.viewers[viewerSession.GetClientId()] = &Viewer{
 		session: viewerSession,
 		track:   localTrack,
+		sender:  rtpSender,
 	}
 
 	// 4. CRITICAL: Ask the PUBLISHER for a Keyframe so the new viewer can start decoding
@@ -134,10 +141,25 @@ func (r *TrackRouter) Start() {
 	logger.Sugar.Infof("Started router for stream %s with track %s (kind=%s)", r.incomingTrack.StreamID(), r.incomingTrack.ID(), r.incomingTrack.Kind().String())
 }
 
-func (r *TrackRouter) RemoveViewer(viewerID string) {
+func (r *TrackRouter) RemoveViewer(viewerID string) error {
 	r.Lock()
+	defer r.Unlock()
+
+	if viewer, exists := r.viewers[viewerID]; exists {
+		// Tell the viewer's PC to stop sending this track
+		pc := viewer.session.GetPeerConnection()
+
+		if pc != nil && pc.ConnectionState() != webrtc.PeerConnectionStateClosed && pc.ConnectionState() != webrtc.PeerConnectionStateFailed && pc.ConnectionState() != webrtc.PeerConnectionStateDisconnected {
+			err := pc.RemoveTrack(viewer.sender)
+
+			if err != nil {
+				return fmt.Errorf("failed to remove track for viewer %s: %v", viewerID, err)
+			}
+		}
+	}
+
 	delete(r.viewers, viewerID)
-	r.Unlock()
+	return nil
 }
 
 func (r *TrackRouter) requestKeyframes() {
@@ -172,6 +194,18 @@ func (r *TrackRouter) Close() {
 	case <-r.done:
 	default:
 		close(r.done)
+	}
+
+	for clientId, v := range r.viewers {
+		// Tell the viewer's PC to stop sending this track
+		pc := v.session.GetPeerConnection()
+
+		if pc != nil && pc.ConnectionState() != webrtc.PeerConnectionStateClosed && pc.ConnectionState() != webrtc.PeerConnectionStateFailed && pc.ConnectionState() != webrtc.PeerConnectionStateDisconnected {
+			err := pc.RemoveTrack(v.sender)
+			if err != nil {
+				logger.Sugar.Warnf("Failed to remove track for viewer %s: %v", clientId, err)
+			}
+		}
 	}
 
 	// 2. Clean up the viewer map so we drop references to their tracks

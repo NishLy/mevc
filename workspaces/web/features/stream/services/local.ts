@@ -187,6 +187,7 @@ export class MediaStreamController {
 
       let trackAudio: MediaStreamTrack | null = null
       let trackVideo: MediaStreamTrack | null = null
+      const streamId = stream.id
 
       for (const track of stream.getTracks()) {
         if (track.kind === "audio") {
@@ -205,7 +206,7 @@ export class MediaStreamController {
             label: trackAudio?.label || "",
             enabled: trackAudio?.enabled || false,
             username: this.userName,
-            streamId: trackAudio?.id || "",
+            streamId: streamId || "",
             transceiverMid: "",
           }
         : null
@@ -219,7 +220,7 @@ export class MediaStreamController {
             label: trackVideo?.label || "",
             enabled: trackVideo?.enabled || false,
             username: this.userName,
-            streamId: trackVideo?.id || "",
+            streamId: streamId || "",
             transceiverMid: "",
           }
         : null
