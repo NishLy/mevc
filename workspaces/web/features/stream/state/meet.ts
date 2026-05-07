@@ -31,6 +31,11 @@ interface MeetState {
     isCurrentlySharingScreen?: boolean
     isCurrentlyRecording?: boolean
   }
+  uiControls: {
+    isChatOpen: boolean
+    isParticipantsOpen: boolean
+    isSettingsOpen: boolean
+  }
   status: MeetConnectionState
   RTCService: WebRTCService | null
   ws: WSservice | null
@@ -62,6 +67,11 @@ const useMeet = create<MeetState>((set) => ({
     currentAudioDeviceId: null,
     isCurrentlySharingScreen: false,
     isCurrentlyRecording: false,
+  },
+  uiControls: {
+    isChatOpen: false,
+    isParticipantsOpen: false,
+    isSettingsOpen: false,
   },
   status: MeetConnectionState.New,
   RTCService: null,

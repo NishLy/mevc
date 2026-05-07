@@ -1,12 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { useEffect, useRef, useState } from "react"
 
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 
 import {
   Tooltip,
@@ -29,6 +24,8 @@ import {
   MessageSquare,
   Send,
 } from "lucide-react"
+import useMeet from "../state/meet"
+import classNames from "classnames"
 
 const DUMMY_MESSAGES = [
   { id: 1, type: "system", text: "Meeting started · 23:20" },
@@ -190,6 +187,7 @@ const ChatTabs = () => {
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState(DUMMY_MESSAGES)
   const [input, setInput] = useState("")
+  const { isChatOpen } = useMeet((state) => state.uiControls)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -223,7 +221,12 @@ const ChatTabs = () => {
   }
 
   return (
-    <div className="flex h-screen w-64 flex-col border-l border-zinc-700/50 bg-[#1a1a28]/95 xl:w-xl">
+    <div
+      className={classNames(
+        "fixed top-0 right-0 bottom-0 z-50 flex h-screen w-64 translate-x-0 flex-col border-l border-zinc-700/50 bg-[#1a1a28]/95 transition-transform duration-300 ease-in-out xl:w-xl",
+        isChatOpen ? "translate-x-0" : "translate-x-full"
+      )}
+    >
       <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col">
         {/* Tab headers */}
         <div className="border-b border-zinc-700/50 px-3 pt-2">

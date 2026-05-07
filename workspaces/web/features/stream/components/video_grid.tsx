@@ -6,12 +6,20 @@ import VideoTile from "./video_tile"
 import useMeet from "../state/meet"
 
 const calculateGridColumns = (count: number) => {
-  if (count === 1) return "grid-cols-1"
-  if (count === 2) return "grid-cols-2"
-  if (count <= 4) return "grid-cols-2"
-  if (count <= 6) return "grid-cols-3"
-  if (count <= 9) return "grid-cols-3"
-  return "grid-cols-4"
+  if (count === 1)
+    return "grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:max-w-9/12"
+  if (count === 2)
+    return "grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:max-w-10/12"
+  if (count <= 4)
+    return "grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:max-w-10/12"
+  if (count <= 6)
+    return "grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:max-w-12/12"
+  if (count <= 9)
+    return "grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:max-w-10/12"
+  if (count <= 16)
+    return "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 xl:max-w-12/12"
+  if (count <= 25) return "grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+  return "grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
 }
 
 export default function VideosGrid() {
@@ -35,23 +43,24 @@ export default function VideosGrid() {
   )
 
   return (
-    <>
+    <div className="relative flex h-full w-full flex-col justify-center">
       <div
         className={classNames(
-          "mx-auto content-center gap-4 p-2",
-          calculateGridColumns(unpinnedStreams.length),
+          "content-centerbg-transparent box-border w-full gap-2 p-2",
+          pinnedStreams.length == 0 &&
+            calculateGridColumns(unpinnedStreams.length),
           pinnedStreams.length > 0
-            ? "fixed top-0 left-0 z-50 flex h-56 w-fit justify-items-start overflow-x-auto overflow-y-hidden bg-transparent p-4"
-            : "box-border grid h-screen w-full flex-wrap justify-center justify-items-center overflow-hidden rounded-lg xl:max-w-11/12"
+            ? "flex h-[15vh] w-screen justify-items-start gap-2 overflow-x-auto overflow-y-hidden bg-transparent p-4"
+            : "mx-auto grid w-full flex-wrap justify-center justify-items-center overflow-hidden rounded-l"
         )}
       >
         {unpinnedStreams.map((s) => (
           <div
             key={s.id}
             className={classNames(
-              "relative h-full w-full",
-              pinnedStreams.length > 0 &&
-                "max-h-44 max-w-xs opacity-70 hover:opacity-100"
+              pinnedStreams.length > 0
+                ? "h-40 w-70 shrink-0 opacity-70 hover:opacity-100"
+                : "relative h-fit w-full"
             )}
           >
             <VideoTile {...s} />
@@ -62,21 +71,18 @@ export default function VideosGrid() {
       {pinnedStreams.length > 0 && (
         <div
           className={classNames(
-            "grid h-screen w-full content-center justify-items-center gap-2 overflow-y-auto p-2",
+            "mx-auto grid h-[90vh] w-full flex-wrap items-center justify-items-center gap-4 overflow-hidden rounded-lg",
             calculateGridColumns(pinnedStreams.length),
             "z-10"
           )}
         >
           {pinnedStreams.map((s) => (
-            <div
-              key={s.id}
-              className={classNames("relative h-full w-full max-w-10/12")}
-            >
+            <div key={s.id} className={classNames("relative h-fit w-full")}>
               <VideoTile key={s.id} {...s} />
             </div>
           ))}
         </div>
       )}
-    </>
+    </div>
   )
 }

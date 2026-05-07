@@ -281,7 +281,7 @@ function VideoTile(props: MediaCombinedStream) {
           </div>
         )}
 
-        <span className="rounded bg-blue-500/20 px-3 py-1 text-sm text-blue-300">
+        <span className="rounded bg-violet-500 px-3 py-1 text-sm text-white">
           {userName}
         </span>
       </div>

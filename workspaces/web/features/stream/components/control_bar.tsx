@@ -88,7 +88,7 @@ function ControlButton({
         variant="ghost"
         onClick={onClick}
         className={classNames(
-          "h-11 gap-2 rounded-xl px-3 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white",
+          "h-11 cursor-pointer gap-2 rounded-xl px-3 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white",
           {
             "bg-white/10 text-white": active && !danger,
             "bg-red-500/15 text-red-400 hover:bg-red-500/25 hover:text-red-300":
@@ -142,6 +142,11 @@ function ControlButton({
 export default function ControlBar() {
   const controller = useMeet((state) => state.controller)
   const localController = useMeet((state) => state.controllerState)
+
+  const { isChatOpen, isParticipantsOpen, isSettingsOpen } = useMeet(
+    (state) => state.uiControls
+  )
+
   const timer = useTimer()
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -230,7 +235,7 @@ export default function ControlBar() {
   )
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-20 flex items-end justify-center pb-6 opacity-20 transition-opacity hover:opacity-100">
+    <div className="pointer-events-none fixed inset-0 z-20 flex items-end justify-center pb-6 transition-opacity hover:opacity-100">
       {/* video here */}
       {/* <video id="localVideo" autoPlay playsInline controls={false} className="absolute inset-0 w-full h-full object-cover" /> */}
 
@@ -315,8 +320,16 @@ export default function ControlBar() {
           {/* Chat — dummy */}
           <ControlButton
             icon={<MessageSquare className="h-4 w-4" />}
-            label="Chat"
-            tooltip="Open chat"
+            label={isChatOpen ? "Close Chat" : "Open Chat"}
+            tooltip={isChatOpen ? "Close chat" : "Open chat"}
+            onClick={() => {
+              useMeet.setState((state) => ({
+                uiControls: {
+                  ...state.uiControls,
+                  isChatOpen: !state.uiControls.isChatOpen,
+                },
+              }))
+            }}
           />
 
           {/* Share Screen */}
