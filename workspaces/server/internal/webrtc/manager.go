@@ -123,13 +123,15 @@ func (sm *sessionManager) SubscribeToExistingTracks(newSession Session) {
 			needsRenegotiation = true
 
 			if router.hasStarted && router.metadata != nil {
-				newSession.Emit("new_track", router.incomingTrack.StreamID(), map[string]interface{}{
-					"trackId":       router.incomingTrack.ID(),
-					"streamId":      router.incomingTrack.StreamID(),
-					"kind":          router.incomingTrack.Kind().String(),
-					"clientId":      router.publisherID,
-					"streamGroupId": router.metadata.streamGroupId,
-					"label":         router.metadata.label,
+				newSession.Emit("new_track", router.incomingTrack.StreamID(), &SessionTrackMetadata{
+					TrackId:       router.incomingTrack.ID(),
+					StreamId:      router.incomingTrack.StreamID(),
+					Kind:          router.incomingTrack.Kind().String(),
+					ClientId:      router.publisherID,
+					StreamGroupId: router.metadata.StreamGroupId,
+					Label:         router.metadata.Label,
+					Enabled:       router.metadata.Enabled,
+					Username:      router.metadata.Username,
 				})
 			}
 		}

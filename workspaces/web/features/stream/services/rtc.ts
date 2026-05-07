@@ -2,36 +2,23 @@ import WSservice from "@/lib/ws"
 import {
   LOCAL_STREAM_TYPE,
   LocalStreamsTuple,
-  MediaStreamItem,
+  MediaCombinedStream,
+  PendingEntry,
+  TrackMeta,
 } from "../types/service"
 import { createBlackVideoTrack } from "./local"
+import { metadata, track } from "framer-motion/m"
 
 interface WebRTCServiceProps {
-  onAddedRemoteStream?: (stream: MediaStreamItem) => void
+  onAddedRemoteStream?: (stream: MediaCombinedStream) => void
   onRemovedRemoteStream?: (streamId: string) => void
   onPeerStatusChanged?: (status: string) => void
-}
-
-interface TrackMeta {
-  trackId: string
-  kind: string
-  clientId: string
-  streamGroupId: string
-  transceiverMid: string
-  streamId: string
-  label: string
-}
-
-interface PendingEntry {
-  meta?: TrackMeta
-  stream?: MediaStream
 }
 
 export class WebRTCService {
   private peerConnection: RTCPeerConnection | null = null
   private wsService: WSservice | null = null
   private localStreams: LocalStreamsTuple = [null, null]
-  private roomId: string = ""
 
   // Rendezvous map: trackId → { meta?, track? }
   // Whichever side (socket or WebRTC) arrives second triggers resolution
@@ -43,8 +30,12 @@ export class WebRTCService {
     string,
     {
       clientId: string
-      meta: TrackMeta
+      metas: {
+        audio: TrackMeta | null
+        video: TrackMeta | null
+      }
       streams: Map<string, MediaStream>
+      localStream: MediaCombinedStream | null
     }
   > = new Map()
 
@@ -56,12 +47,12 @@ export class WebRTCService {
 
   constructor(
     private clientId: string,
-    roomId: string,
+    private username: string,
+    private roomId: string,
     wsService: WSservice,
     localStreams: LocalStreamsTuple,
     options?: WebRTCServiceProps
   ) {
-    this.roomId = roomId
     this.wsService = wsService
 
     localStreams.forEach((stream, index) => {
@@ -107,14 +98,19 @@ export class WebRTCService {
    * @param sourceStream - The source MediaStream to split
    * @returns Object containing videoOnlyStream and audioOnlyStream
    */
-  private async splitMediaStream(sourceStream: MediaStream) {
-    const videoOnlyStream = new MediaStream()
-    const audioOnlyStream = new MediaStream()
+  private splitMediaStream(sourceStream: MediaStream): {
+    videoOnlyStream: MediaStream | null
+    audioOnlyStream: MediaStream | null
+  } {
+    let videoOnlyStream: MediaStream | null = null
+    let audioOnlyStream: MediaStream | null = null
 
     sourceStream.getTracks().forEach((track) => {
       if (track.kind === "video") {
+        videoOnlyStream = new MediaStream()
         videoOnlyStream.addTrack(track)
       } else if (track.kind === "audio") {
+        audioOnlyStream = new MediaStream()
         audioOnlyStream.addTrack(track)
       }
     })
@@ -126,14 +122,17 @@ export class WebRTCService {
     return crypto.randomUUID()
   }
 
-  private async addStreamToPeerConnection(streamItem: MediaStreamItem) {
-    const { videoOnlyStream, audioOnlyStream } = await this.splitMediaStream(
+  private async addStreamToPeerConnection(streamItem: MediaCombinedStream) {
+    const { videoOnlyStream, audioOnlyStream } = this.splitMediaStream(
       streamItem.stream
     )
 
-    const streamGroupId = this.generateStreamGroupId()
+    const streamGroupId =
+      streamItem.metadata.audio?.streamGroupId ??
+      streamItem.metadata.video?.streamGroupId ??
+      this.generateStreamGroupId()
 
-    videoOnlyStream.getTracks().forEach((track) => {
+    videoOnlyStream?.getTracks().forEach((track) => {
       this.peerConnection?.addTrack(track, videoOnlyStream)
 
       const meta: TrackMeta = {
@@ -144,12 +143,14 @@ export class WebRTCService {
         transceiverMid: "",
         streamId: videoOnlyStream.id,
         label: track.label,
+        enabled: track.enabled,
+        username: this.username,
       }
 
       this.emit("track_changed", meta)
     })
 
-    audioOnlyStream.getTracks().forEach((track) => {
+    audioOnlyStream?.getTracks().forEach((track) => {
       this.peerConnection?.addTrack(track, audioOnlyStream)
 
       const meta: TrackMeta = {
@@ -160,6 +161,8 @@ export class WebRTCService {
         transceiverMid: "",
         streamId: audioOnlyStream.id,
         label: track.label,
+        enabled: track.enabled,
+        username: this.username,
       }
 
       this.emit("track_changed", meta)
@@ -242,11 +245,23 @@ export class WebRTCService {
     const { clientId, streamGroupId, kind } = entry.meta
     const stream = entry.stream
 
+    if (!clientId || !streamGroupId || !kind) {
+      console.warn(
+        "Received incomplete track information, cannot resolve:",
+        entry.meta
+      )
+      return
+    }
+
     if (!this.resolvedStreams.has(streamGroupId)) {
       this.resolvedStreams.set(streamGroupId, {
         clientId,
         streams: new Map(),
-        meta: entry.meta,
+        metas: {
+          audio: kind === "audio" ? entry.meta : null,
+          video: kind === "video" ? entry.meta : null,
+        },
+        localStream: null,
       })
     }
 
@@ -276,11 +291,24 @@ export class WebRTCService {
       }
     }
 
+    resolved.localStream = {
+      id: streamGroupId,
+      stream: ms,
+      type: LOCAL_STREAM_TYPE.CAMERA,
+      isLocal: false,
+      metadata: resolved.metas,
+      isAudioEnabled: !!audioTrack,
+      isVideoEnabled: !!videoTrack,
+    }
+
     this.options.onAddedRemoteStream?.({
       id: streamGroupId,
       stream: ms,
       type: LOCAL_STREAM_TYPE.CAMERA,
       isLocal: false,
+      metadata: resolved.metas,
+      isAudioEnabled: !!audioTrack,
+      isVideoEnabled: !!videoTrack,
     })
   }
 
@@ -314,8 +342,29 @@ export class WebRTCService {
       initialLocalStreams
         .filter((stream) => !!stream)
         .map(async (stream) => {
-          const isExist = this.localStreams.some((s) => s?.id === stream!.id)
-          if (isExist) return stream!
+          const existingStream = this.localStreams.find(
+            (s) => s?.id === stream?.id
+          )
+
+          if (existingStream) {
+            for (const meta in existingStream.metadata) {
+              if (!meta) continue
+
+              const alteredMeta: TrackMeta = {
+                ...existingStream.metadata[
+                  meta as keyof typeof existingStream.metadata
+                ]!,
+                enabled:
+                  meta === "video"
+                    ? stream!.isVideoEnabled
+                    : stream!.isAudioEnabled,
+              }
+
+              this.emit("track_changed", alteredMeta)
+            }
+
+            return existingStream
+          }
 
           await this.addStreamToPeerConnection(stream)
           isModified = true
@@ -452,6 +501,43 @@ export class WebRTCService {
         //   console.error("Failed to renegotiate after track removal:", err)
         // })
       }
+    })
+
+    // listen to remote track
+    this.wsService?.on("track_changed", (clientId: string, meta: TrackMeta) => {
+      if (meta.clientId === this.clientId) {
+        return
+      }
+
+      if (!meta.streamGroupId || !meta.kind) {
+        console.warn(
+          "Received track_changed event with incomplete meta, cannot correlate:",
+          meta
+        )
+        return
+      }
+
+      const resolved = this.resolvedStreams.get(meta.streamGroupId)
+
+      if (!resolved || !resolved.streams) return
+      const stream = resolved.streams.get(meta.kind)
+      if (!stream) return
+
+      const kind = meta.kind
+
+      let localStream = resolved.localStream
+      if (!localStream) return
+
+      localStream = {
+        ...localStream,
+        isAudioEnabled:
+          kind === "audio" ? meta.enabled : localStream.isAudioEnabled,
+        isVideoEnabled:
+          kind === "video" ? meta.enabled : localStream.isVideoEnabled,
+      }
+      resolved.localStream = localStream
+
+      this.options.onAddedRemoteStream?.(resolved.localStream)
     })
   }
 

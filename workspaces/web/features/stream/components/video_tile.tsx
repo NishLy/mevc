@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import classNames from "classnames"
 import {
   Pin,
@@ -15,6 +16,7 @@ import {
   Star,
   MessageSquare,
   Shield,
+  MicOffIcon,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -23,8 +25,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MediaStreamItem } from "../types/service"
+import { MediaCombinedStream } from "../types/service"
 import useMeet from "../state/meet"
+import { ParticpantIcon } from "@/components/participant"
 
 interface MenuItemDef {
   icon: React.ReactNode
@@ -72,16 +75,25 @@ const LOCAL_MENU: MenuItemDef[] = [
   { icon: <VolumeX className="h-3.5 w-3.5" />, label: "Mute original audio" },
 ]
 
-function VideoTile(props: MediaStreamItem) {
+function VideoTile(props: MediaCombinedStream) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [hovered, setHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+
+  const userName = useMemo(() => {
+    if (props.isLocal) return "You"
+    return (
+      props.metadata?.video?.username ||
+      props.metadata?.audio?.username ||
+      "Participant"
+    )
+  }, [props.metadata, props.isLocal])
 
   useEffect(() => {
     if (videoRef.current && props.stream) {
       videoRef.current.srcObject = props.stream
     }
-  }, [props.stream, props.id])
+  }, [props.stream, props.id, props.isVideoEnabled])
 
   const menuItems = props.isLocal ? LOCAL_MENU : REMOTE_MENU
   const dangerItems = props.isLocal ? [] : REMOTE_MENU_DANGER
@@ -148,22 +160,37 @@ function VideoTile(props: MediaStreamItem) {
   return (
     <div
       className={classNames(
-        "group relative box-border aspect-video max-h-[95vh] shrink-0 overflow-hidden rounded-lg bg-zinc-800",
+        "group relative box-border aspect-video max-h-[95vh] shrink-0 overflow-hidden rounded-lg bg-zinc-700",
         props.isLocal && "ring-1 ring-blue-400/50"
       )}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <video
-        ref={videoRef}
-        id={props.id}
-        autoPlay
-        playsInline
-        muted={props.isLocal}
-        controls={false}
-        // poster="https://img.favpng.com/10/24/2/computer-icons-user-icon-design-male-png-favpng-grqs7j1MENUsCah7VD6XBWVst.jpg"
-        className="h-full w-full object-contain"
-      />
+      {props.isVideoEnabled ? (
+        <video
+          ref={videoRef}
+          id={props.id}
+          autoPlay
+          playsInline
+          muted={props.isLocal}
+          controls={false}
+          // poster="https://img.favpng.com/10/24/2/computer-icons-user-icon-design-male-png-favpng-grqs7j1MENUsCah7VD6XBWVst.jpg"
+          className="h-full w-full object-contain"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-zinc-700">
+          <ParticpantIcon
+            participant={{
+              id: props.id,
+              name: userName,
+              initials: userName.slice(0, 3).toUpperCase() || "UNK",
+              color: "#888",
+              role: "Guest",
+            }}
+            size="xl"
+          />
+        </div>
+      )}
 
       {/* gradient scrim — only visible on hover */}
       <div
@@ -246,24 +273,18 @@ function VideoTile(props: MediaStreamItem) {
         </DropdownMenu>
       </div>
 
-      {/* bottom name bar */}
-      <div
-        className={classNames(
-          "absolute right-0 bottom-0 left-0 flex items-center justify-between px-2.5 py-2 transition-opacity duration-200",
-          showOverlay ? "opacity-100" : "opacity-0"
+      {/* local "You" badge — always visible */}
+      <div className="absolute bottom-4 left-4 flex items-center gap-4">
+        {!props.isAudioEnabled && (
+          <div className="rounded bg-red-500 p-2">
+            <MicOffIcon className="h-3 w-3" />
+          </div>
         )}
-      >
-        <span className="text-xs font-medium text-white/90 drop-shadow">
-          {props.isLocal ? "You" : (props.id ?? "Participant")}
+
+        <span className="rounded bg-blue-500/20 px-3 py-1 text-sm text-blue-300">
+          {userName}
         </span>
       </div>
-
-      {/* local "You" badge — always visible */}
-      {props.isLocal && (
-        <span className="absolute bottom-2 left-2 rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] text-blue-300">
-          You
-        </span>
-      )}
     </div>
   )
 }

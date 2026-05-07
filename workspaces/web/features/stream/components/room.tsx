@@ -7,7 +7,7 @@ import { MediaStreamController } from "../services/local"
 import useMeet from "../state/meet"
 import { WebRTCService } from "../services/rtc"
 import WSservice from "@/lib/ws"
-import { MediaStreamItem, MeetConnectionState } from "../types/service"
+import { MediaCombinedStream, MeetConnectionState } from "../types/service"
 import ChatTabs from "./chat"
 import JoiningVariant from "./loadings/join"
 import ReconnectingVariant from "./loadings/rejoin"
@@ -16,10 +16,6 @@ import MeetClosedVariant from "./loadings/closed"
 interface RoomProps {
   roomId: string
 }
-
-const dummyClientId = "client_" + Math.random().toString(36).substr(2, 9)
-
-console.log("Generated dummy client ID:", dummyClientId)
 
 const RenderLoading = (status: MeetConnectionState) => {
   if (
@@ -54,6 +50,8 @@ const RenderLoading = (status: MeetConnectionState) => {
 
 export default function Room({ roomId }: RoomProps) {
   const {
+    userName,
+    clientId,
     localStreams,
     status,
     RTCService,
@@ -68,6 +66,8 @@ export default function Room({ roomId }: RoomProps) {
   console.log("Room component rendered with status:", status, localStreams)
 
   useEffect(() => {
+    if (!roomId || !clientId || !userName) return
+
     const ws = new WSservice({
       url: process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws",
       options: {
@@ -75,7 +75,7 @@ export default function Room({ roomId }: RoomProps) {
         autoConnect: true,
         listeners: {
           connect: () => {
-            ws.emit("join_room", dummyClientId, roomId)
+            ws.emit("join_room", clientId, roomId)
           },
           joined_room: (joinedRoomId: string) => {
             if (joinedRoomId === roomId) {
@@ -92,7 +92,7 @@ export default function Room({ roomId }: RoomProps) {
       },
     })
 
-    const localMediaController = new MediaStreamController(dummyClientId)
+    const localMediaController = new MediaStreamController(clientId, userName)
     setController(localMediaController)
     setWSservice(ws)
 
@@ -107,7 +107,9 @@ export default function Room({ roomId }: RoomProps) {
     if (
       (localStreams[0] === null && localStreams[1] === null) ||
       status !== MeetConnectionState.SessionCreated ||
-      !ws
+      !ws ||
+      !clientId ||
+      !userName
     ) {
       return
     }
@@ -117,7 +119,8 @@ export default function Room({ roomId }: RoomProps) {
     }
 
     const webRTCService = new WebRTCService(
-      dummyClientId,
+      clientId,
+      userName,
       roomId,
       ws,
       localStreams,
@@ -132,8 +135,11 @@ export default function Room({ roomId }: RoomProps) {
 
               if (acc[stream.id]) {
                 acc[stream.id] = {
-                  ...(acc[stream.id] as MediaStreamItem),
-                  stream: stream.stream, // Update the stream reference
+                  ...(acc[stream.id] as MediaCombinedStream),
+                  stream: stream.stream,
+                  isVideoEnabled: stream.isVideoEnabled,
+                  isAudioEnabled: stream.isAudioEnabled,
+                  metadata: stream.metadata,
                 }
               } else {
                 acc[stream.id] = stream
@@ -141,7 +147,7 @@ export default function Room({ roomId }: RoomProps) {
 
               return acc
             },
-            {} as Record<string, MediaStreamItem>
+            {} as Record<string, MediaCombinedStream>
           )
 
           useMeet.setState({ remoteStreams: Object.values(newRemoteStreams) })
@@ -176,6 +182,8 @@ export default function Room({ roomId }: RoomProps) {
     setRTCService,
     setCurrentStatus,
     status,
+    clientId,
+    userName,
   ])
 
   useEffect(() => {

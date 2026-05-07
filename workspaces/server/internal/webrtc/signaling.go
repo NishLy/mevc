@@ -95,7 +95,9 @@ func HandleOffer(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 
 	// replace local offer with new one if exists (renegotiation)
 	if session.IsRemoteSet() {
-		Must(pc.SetLocalDescription(webrtc.SessionDescription{}))
+		if err := pc.SetLocalDescription(webrtc.SessionDescription{}); err != nil {
+			logger.Sugar.Errorf("Failed to reset local description for session %s: %v", session.GetClientId(), err)
+		}
 	}
 
 	// Block
@@ -117,12 +119,21 @@ func HandleOffer(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	}
 
 	// 3. Set Remote and process buffer
-	Must(pc.SetRemoteDescription(offer))
+	if err := pc.SetRemoteDescription(offer); err != nil {
+		logger.Sugar.Errorf("Failed to set remote description for session %s: %v", session.GetClientId(), err)
+		return
+	}
 
 	// 4. Create Answer
 	answer, err := pc.CreateAnswer(nil)
-	Must(err)
-	Must(pc.SetLocalDescription(answer))
+	if err != nil {
+		logger.Sugar.Errorf("Failed to create answer for session %s: %v", session.GetClientId(), err)
+		return
+	}
+	if err := pc.SetLocalDescription(answer); err != nil {
+		logger.Sugar.Errorf("Failed to set local description for session %s: %v", session.GetClientId(), err)
+		return
+	}
 
 	conn.Emit("receive_answer", session.GetClientId(), answer)
 }
@@ -153,7 +164,9 @@ func HandleIceCandidate(conn ws.WebSocketConnection, data ...any) {
 		SDPMLineIndex: &sdpMLineIndex,
 	}
 
-	Must(session.GetPeerConnection().AddICECandidate(candidate))
+	if err := session.GetPeerConnection().AddICECandidate(candidate); err != nil {
+		logger.Sugar.Errorf("Failed to add ICE candidate for session %s: %v", session.GetClientId(), err)
+	}
 }
 
 func HandleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
@@ -174,19 +187,19 @@ func HandleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) 
 	streamId := trackMetadatMap["streamId"].(string)
 	kind := trackMetadatMap["kind"].(string)
 	streamGroupId := trackMetadatMap["streamGroupId"].(string)
-	label := ""
-
-	if trackMetadatMap["label"] != nil {
-		label = trackMetadatMap["label"].(string)
-	}
+	label := trackMetadatMap["label"].(string)
+	enabled := trackMetadatMap["enabled"].(bool)
+	username := trackMetadatMap["username"].(string)
 
 	metadata := SessionTrackMetadata{
-		trackId:       trackId,
-		kind:          kind,
-		streamGroupId: streamGroupId,
-		clientId:      clientID,
-		streamId:      streamId,
-		label:         label,
+		TrackId:       trackId,
+		Kind:          kind,
+		StreamGroupId: streamGroupId,
+		ClientId:      clientID,
+		StreamId:      streamId,
+		Label:         label,
+		Enabled:       enabled,
+		Username:      username,
 	}
 
 	session, exists := sessionManager.GetSession(clientID)
@@ -201,21 +214,13 @@ func HandleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) 
 		newRouter := NewTrackRouter(session.GetPeerConnection(), clientID)
 		newRouter.SetMetadata(&metadata)
 
-		// try to start
 		newRouter.Start()
 
 		sessionManager.AddRouter(streamId, newRouter)
-		return
+		hub.EmitTo(sessionManager.GetGroupId(), "new_track", &conn, session.GetClientId(), &metadata)
+	} else {
+		hub.EmitTo(sessionManager.GetGroupId(), "track_changed", &conn, session.GetClientId(), &metadata)
 	}
-
-	hub.EmitTo(sessionManager.GetGroupId(), "new_track", &conn, session.GetClientId(), map[string]interface{}{
-		"trackId":       trackId,
-		"streamId":      streamId,
-		"kind":          kind,
-		"clientId":      clientID,
-		"streamGroupId": streamGroupId,
-		"label":         label,
-	})
 
 	logger.Sugar.Infof("Client %s changed track %s (kind=%s) in stream group %s", clientID, streamId, kind, streamGroupId)
 }
@@ -233,7 +238,9 @@ func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) (err erro
 
 	defer func() {
 		if err != nil {
-			Must(session.GetPeerConnection().SetLocalDescription(webrtc.SessionDescription{}))
+			if err := session.GetPeerConnection().SetLocalDescription(webrtc.SessionDescription{}); err != nil {
+				logger.Sugar.Errorf("Failed to reset local description for session %s: %v", session.GetClientId(), err)
+			}
 			<-session.GetOfferWaitChan()
 		}
 	}()

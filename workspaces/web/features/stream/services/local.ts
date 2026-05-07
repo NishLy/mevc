@@ -4,6 +4,7 @@ import {
   LOCAL_STREAM_TYPE,
   LocalStreamsTuple,
   MediaStreamOptions,
+  TrackMeta,
 } from "../types/service"
 
 export function createBlackVideoTrack(width = 640, height = 480) {
@@ -58,6 +59,7 @@ export class MediaStreamController {
 
   constructor(
     public id: string,
+    public userName: string,
     options?: MediaStreamOptions
   ) {
     if (options) {
@@ -160,6 +162,10 @@ export class MediaStreamController {
       : LOCAL_STREAM_TYPE.SCREEN_SHARE
   }
 
+  private generateStreamGroupId() {
+    return crypto.randomUUID()
+  }
+
   // Updates the local media stream in the list of local streams, either replacing the existing stream or adding a new entry if it doesn't exist, and triggers an update callback to notify of changes
   private async setLocalStream(
     type = LOCAL_STREAM_TYPE.CAMERA,
@@ -170,12 +176,65 @@ export class MediaStreamController {
 
     if (item) {
       item.stream = stream
+      item.isAudioEnabled = stream
+        .getAudioTracks()
+        .some((track) => track.enabled)
+      item.isVideoEnabled = stream
+        .getVideoTracks()
+        .some((track) => track.enabled)
     } else {
+      const streamGroupId = this.generateStreamGroupId()
+
+      let trackAudio: MediaStreamTrack | null = null
+      let trackVideo: MediaStreamTrack | null = null
+
+      for (const track of stream.getTracks()) {
+        if (track.kind === "audio") {
+          trackAudio = track
+        } else if (track.kind === "video") {
+          trackVideo = track
+        }
+      }
+
+      const metadataAudio: TrackMeta | null = trackAudio
+        ? {
+            trackId: trackAudio?.id || "",
+            kind: trackAudio?.kind || "",
+            clientId: this.id,
+            streamGroupId,
+            label: trackAudio?.label || "",
+            enabled: trackAudio?.enabled || false,
+            username: this.userName,
+            streamId: trackAudio?.id || "",
+            transceiverMid: "",
+          }
+        : null
+
+      const metadataVideo: TrackMeta | null = trackVideo
+        ? {
+            trackId: trackVideo?.id || "",
+            kind: trackVideo?.kind || "",
+            clientId: this.id,
+            streamGroupId,
+            label: trackVideo?.label || "",
+            enabled: trackVideo?.enabled || false,
+            username: this.userName,
+            streamId: trackVideo?.id || "",
+            transceiverMid: "",
+          }
+        : null
+
       this.localStreams[index] = {
         id: this.getIDForStreamType(type),
         stream,
         type,
         isLocal: true,
+        isAudioEnabled: stream.getAudioTracks().some((track) => track.enabled),
+        isVideoEnabled: stream.getVideoTracks().some((track) => track.enabled),
+        metadata: {
+          audio: metadataAudio,
+          video: metadataVideo,
+        },
       }
     }
 
@@ -289,6 +348,8 @@ export class MediaStreamController {
       if (this.onVideoToggleCallback) {
         this.onVideoToggleCallback(this.activeStreamConfiguration.videoEnabled)
       }
+
+      this.setLocalStream(LOCAL_STREAM_TYPE.CAMERA, this.activeLocalMediaStream)
     }
   }
 
@@ -303,6 +364,8 @@ export class MediaStreamController {
       if (this.onAudioToggleCallback) {
         this.onAudioToggleCallback(this.activeStreamConfiguration.audioEnabled)
       }
+
+      this.setLocalStream(LOCAL_STREAM_TYPE.CAMERA, this.activeLocalMediaStream)
     }
   }
 

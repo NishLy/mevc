@@ -7,14 +7,39 @@ export enum LOCAL_STREAM_TYPE {
   SCREEN_SHARE = "screen_share",
 }
 
-export type LocalStreamsTuple = [MediaStreamItem | null, MediaStreamItem | null]
+export type LocalStreamsTuple = [
+  MediaCombinedStream | null,
+  MediaCombinedStream | null,
+]
 
-export interface MediaStreamItem<T = Record<string, unknown>> {
+export interface TrackMeta {
+  trackId: string
+  kind: string
+  clientId: string
+  streamGroupId: string
+  transceiverMid: string
+  streamId: string
+  label: string
+  enabled: boolean
+  username: string
+}
+
+export interface PendingEntry {
+  meta?: TrackMeta
+  stream?: MediaStream
+}
+
+export interface MediaCombinedStream {
   id: string
   stream: MediaStream
   type: LOCAL_STREAM_TYPE
   isLocal: boolean
-  metadata?: T
+  metadata: {
+    audio: TrackMeta | null
+    video: TrackMeta | null
+  }
+  isAudioEnabled: boolean
+  isVideoEnabled: boolean
 }
 
 export interface MediaStreamOptions {

@@ -14,12 +14,6 @@ var (
 	GlobalSessionManager = make(map[string]SessionManager)
 )
 
-func Must(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
 func GetGroupManagerFromConn(conn ws.WebSocketConnection) SessionManager {
 	groupId := conn.GetGroupId()
 	if groupId == nil {
@@ -47,9 +41,11 @@ func MustRegisterCodecs(me *webrtc.MediaEngine) {
 		{webrtc.MimeTypeOpus, 48000, webrtc.RTPCodecTypeAudio},
 	}
 	for _, c := range codecs {
-		Must(me.RegisterCodec(webrtc.RTPCodecParameters{
+		if err := me.RegisterCodec(webrtc.RTPCodecParameters{
 			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: c.mime, ClockRate: c.clockRate},
-		}, c.kind))
+		}, c.kind); err != nil {
+			logger.Sugar.Errorf("Failed to register codec %s: %v", c.mime, err)
+		}
 	}
 }
 
@@ -59,15 +55,21 @@ func MustCreatePeerConnection() *webrtc.PeerConnection {
 
 	ir := &interceptor.Registry{}
 	pli, err := intervalpli.NewReceiverInterceptor()
-	Must(err)
+	if err != nil {
+		logger.Sugar.Errorf("Failed to create PLI interceptor: %v", err)
+	}
 	ir.Add(pli)
-	Must(webrtc.RegisterDefaultInterceptors(me, ir))
+	if err := webrtc.RegisterDefaultInterceptors(me, ir); err != nil {
+		logger.Sugar.Errorf("Failed to register default interceptors: %v", err)
+	}
 
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithInterceptorRegistry(ir))
 	pc, err := api.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
 	})
-	Must(err)
+	if err != nil {
+		logger.Sugar.Errorf("Failed to create peer connection: %v", err)
+	}
 
 	return pc
 }
@@ -112,13 +114,15 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 		}
 
 		if router.hasStarted && router.metadata != nil {
-			hub.EmitTo(sessionManager.GetGroupId(), "new_track", &conn, session.GetClientId(), map[string]interface{}{
-				"trackId":       track.ID(),
-				"streamId":      track.StreamID(),
-				"kind":          track.Kind().String(),
-				"clientId":      session.GetClientId(),
-				"streamGroupId": router.metadata.streamGroupId,
-				"label":         router.metadata.label,
+			hub.EmitTo(sessionManager.GetGroupId(), "new_track", &conn, session.GetClientId(), &SessionTrackMetadata{
+				TrackId:       track.ID(),
+				StreamId:      track.StreamID(),
+				Kind:          track.Kind().String(),
+				ClientId:      session.GetClientId(),
+				StreamGroupId: router.metadata.StreamGroupId,
+				Label:         router.metadata.Label,
+				Username:      router.metadata.Username,
+				Enabled:       router.metadata.Enabled,
 			})
 		}
 
@@ -174,4 +178,7 @@ func RegisterHandlers(hub ws.WsHub) {
 		HandleDisconnect(hub, conn, data...)
 	})
 	hub.On("track_removed", HandleRemoveTrack)
+	// hub.On("stream_metadata_changed", func(conn ws.WebSocketConnection, data ...any) {
+	// 	HandleStreamMetadataChanged(hub, conn, data...)
+	// })
 }

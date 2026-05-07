@@ -1,18 +1,23 @@
 import { create } from "zustand/react"
 import {
   LocalStreamsTuple,
-  MediaStreamItem,
+  MediaCombinedStream,
   MeetConnectionState,
 } from "../types/service"
 import { MediaStreamController } from "../services/local"
 import { WebRTCService } from "../services/rtc"
 import WSservice from "@/lib/ws"
 
+const dummyClientId = "client_" + Math.random().toString(36).substr(2, 9)
+const dummyUsername = "User_" + Math.random().toString(36).substr(2, 5)
+
 interface MeetState {
+  clientId: string | null
+  userName: string | null
   roomId: string | null
   pc: RTCPeerConnection | null
   localStreams: LocalStreamsTuple
-  remoteStreams: MediaStreamItem[]
+  remoteStreams: MediaCombinedStream[]
   pinnedStreamIds: string[]
   controller?: MediaStreamController
   controllerState: {
@@ -37,6 +42,8 @@ interface MeetState {
 }
 
 const useMeet = create<MeetState>((set) => ({
+  clientId: dummyClientId,
+  userName: dummyUsername,
   roomId: null,
   pc: null,
   localStreams: [null, null],
@@ -101,12 +108,13 @@ const useMeet = create<MeetState>((set) => ({
       }))
     }
     controller.onLocalStreamUpdateCallback = (streams: LocalStreamsTuple) => {
+      const newStreams = [...streams] as LocalStreamsTuple
       set((state) => ({
         controllerState: {
           ...state.controllerState,
-          localStreams: streams,
+          localStreams: newStreams,
         },
-        localStreams: streams,
+        localStreams: newStreams,
       }))
     }
     controller.onDevicesUpdatedCallback = (

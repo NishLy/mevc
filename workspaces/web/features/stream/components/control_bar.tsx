@@ -252,7 +252,7 @@ export default function ControlBar() {
                 <Mic className="h-4 w-4" />
               )
             }
-            label={localController?.audioEnabled ? "Unmute" : "Mute"}
+            label={localController?.audioEnabled ? "Mute" : "Unmute"}
             tooltip={
               localController?.audioEnabled
                 ? "Unmute microphone"

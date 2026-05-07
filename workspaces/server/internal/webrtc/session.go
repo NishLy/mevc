@@ -14,12 +14,14 @@ type ManagedTransceiver struct {
 }
 
 type SessionTrackMetadata struct {
-	trackId       string
-	kind          string
-	streamGroupId string
-	clientId      string
-	streamId      string
-	label         string
+	TrackId       string `json:"trackId"`
+	StreamId      string `json:"streamId"`
+	Kind          string `json:"kind"`
+	StreamGroupId string `json:"streamGroupId"`
+	ClientId      string `json:"clientId"`
+	Label         string `json:"label"`
+	Username      string `json:"username"`
+	Enabled       bool   `json:"enabled"`
 }
 
 type SessionTrack struct {
@@ -103,7 +105,7 @@ func (s *session) GetSelfTracksMetadata(streamGroupId string) (SessionTrackMetad
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, metadata := range s.selfTracksMetadata {
-		if metadata.streamGroupId == streamGroupId {
+		if metadata.StreamGroupId == streamGroupId {
 			return metadata, true
 		}
 	}
