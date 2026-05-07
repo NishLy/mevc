@@ -40,6 +40,7 @@ func NewWsHub() WsHub {
 		rooms:     make(map[string][]WebSocketConnection),
 		listeners: make(map[string][]HandlerFunc),
 		mu:        sync.RWMutex{},
+		currentId: 0,
 	}
 }
 

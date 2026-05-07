@@ -192,6 +192,12 @@ export class WebRTCService {
         return
       }
 
+      console.log(
+        "Received new track event from peer with track ID:",
+        track.id,
+        "and stream ID:",
+        streamId
+      )
       if (!streamId) {
         console.warn(
           "Received track without stream ID, cannot correlate:",
@@ -346,6 +352,7 @@ export class WebRTCService {
 
   private attachWSListeners() {
     this.wsService?.on("new_track", (clientId: string, meta: TrackMeta) => {
+      console.log("Received new_track event with meta:", meta)
       if (this.clientId === clientId) {
         this.ownTrackIds.add(meta.trackId)
         return
@@ -391,15 +398,22 @@ export class WebRTCService {
         this.options.onRemovedRemoteStream?.(streamGroupId)
       }
 
-      this.sendOffer().catch((err) => {
-        console.error("Failed to renegotiate after peer left:", err)
-      })
+      // this.sendOffer().catch((err) => {
+      //   console.error("Failed to renegotiate after peer left:", err)
+      // })
     })
 
     this.wsService?.on(
       "new_offer",
       async (_clientId: string, offer: RTCSessionDescriptionInit) => {
         if (!this.peerConnection) return
+
+        //
+        offer.sdp = offer.sdp?.replace(
+          /rtpmap:0 opus\/48000/g,
+          "rtpmap:111 opus/48000"
+        )
+
         await this.peerConnection.setRemoteDescription(offer)
         const answer = await this.peerConnection.createAnswer()
         await this.peerConnection.setLocalDescription(answer)
@@ -434,9 +448,9 @@ export class WebRTCService {
         this.resolvedStreams.delete(streamGroupId)
         this.options.onRemovedRemoteStream?.(streamGroupId)
 
-        this.sendOffer().catch((err) => {
-          console.error("Failed to renegotiate after track removal:", err)
-        })
+        // this.sendOffer().catch((err) => {
+        //   console.error("Failed to renegotiate after track removal:", err)
+        // })
       }
     })
   }
