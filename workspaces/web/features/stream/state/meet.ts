@@ -6,6 +6,7 @@ import {
   LocalStreamsTuple,
   MediaCombinedStream,
   MeetConnectionState,
+  RoomState,
 } from "../types/service"
 import { MediaStreamController } from "../services/local"
 import { WebRTCService } from "../services/rtc"
@@ -47,6 +48,8 @@ interface MeetState {
   RTCService: WebRTCService | null
   ws: WSservice | null
   lobbyParticipants: IUser[]
+  roomState: RoomState
+  currentPage: number
   setParticipantsInLobby: (participants: IUser[]) => void
   setRoomID: (roomId: string) => void
   setCurrentStatus: (status: MeetConnectionState) => void
@@ -84,6 +87,12 @@ const useMeet = create<MeetState>((set) => ({
   RTCService: null,
   ws: null,
   lobbyParticipants: [],
+  roomState: {
+    maxium_per_page: 10,
+    current_total_participants: 1,
+    current_total_grouped_streams: 1,
+  },
+  currentPage: 1,
   setParticipantsInLobby: (participants: IUser[]) =>
     set({ lobbyParticipants: participants }),
   setRoomID: (roomId) => set({ roomId }),

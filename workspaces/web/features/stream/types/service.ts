@@ -70,3 +70,9 @@ export interface IUser {
   id: string
   username: string
 }
+
+export type RoomState = {
+  maxium_per_page: number
+  current_total_participants: number
+  current_total_grouped_streams: number
+}

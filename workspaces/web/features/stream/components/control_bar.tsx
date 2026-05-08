@@ -142,6 +142,7 @@ function ControlButton({
 export default function ControlBar() {
   const controller = useMeet((state) => state.controller)
   const localController = useMeet((state) => state.controllerState)
+  const roomState = useMeet((state) => state.roomState)
 
   const { isChatOpen, isParticipantsOpen, isSettingsOpen } = useMeet(
     (state) => state.uiControls
@@ -308,7 +309,7 @@ export default function ControlBar() {
                   variant="secondary"
                   className="mb-2 border-0 bg-indigo-500/20 text-indigo-300"
                 >
-                  4 participants
+                  {roomState.current_total_participants} participants
                 </Badge>
                 <p className="text-xs text-white/30">
                   Participant list coming soon

@@ -28,6 +28,9 @@ import {
 import { MediaCombinedStream } from "../types/service"
 import useMeet from "../state/meet"
 import { ParticpantIcon } from "@/components/participant"
+import { AnimatePresence, motion } from "framer-motion"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Loader2 } from "lucide-react"
 
 interface MenuItemDef {
   icon: React.ReactNode
@@ -160,7 +163,7 @@ function VideoTile(props: MediaCombinedStream) {
   return (
     <div
       className={classNames(
-        "group relative box-border aspect-video max-h-[95vh] shrink-0 overflow-hidden rounded-lg bg-zinc-700",
+        "group relative box-border aspect-video shrink-0 overflow-hidden rounded-lg bg-zinc-700",
         props.isLocal && "ring-1 ring-blue-400/50"
       )}
       onMouseEnter={() => setHovered(true)}
@@ -175,6 +178,7 @@ function VideoTile(props: MediaCombinedStream) {
           muted={props.isLocal}
           controls={false}
           // poster="https://img.favpng.com/10/24/2/computer-icons-user-icon-design-male-png-favpng-grqs7j1MENUsCah7VD6XBWVst.jpg"
+          poster="/images/spinner.gif"
           className="h-full w-full object-contain"
         />
       ) : (
@@ -290,3 +294,32 @@ function VideoTile(props: MediaCombinedStream) {
 }
 
 export default VideoTile
+
+export function VideoTileSkeleton() {
+  return (
+    <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-zinc-800/50 ring-1 ring-white/5">
+      {/* 1. The Main Loading Spinner */}
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-zinc-500" />
+        <p className="animate-pulse text-xs font-medium text-zinc-500/80">
+          Connecting to stream...
+        </p>
+      </div>
+
+      {/* 2. Top-Right "Buttons" Skeleton */}
+      <div className="absolute top-2 right-2 flex gap-1">
+        <Skeleton className="h-7 w-7 rounded-md bg-zinc-700/50" />
+        <Skeleton className="h-7 w-7 rounded-md bg-zinc-700/50" />
+        <Skeleton className="h-7 w-7 rounded-md bg-zinc-700/50" />
+      </div>
+
+      {/* 3. Bottom-Left "Name Tag" Skeleton */}
+      <div className="absolute bottom-4 left-4 flex items-center gap-2">
+        <Skeleton className="h-7 w-24 rounded bg-zinc-700/50" />
+      </div>
+
+      {/* Subtle overlay gradient to match the real tile */}
+      <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/20 via-transparent to-transparent" />
+    </div>
+  )
+}

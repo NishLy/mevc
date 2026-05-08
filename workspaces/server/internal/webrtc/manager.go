@@ -7,7 +7,7 @@ import (
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 )
 
-var MAX_STREAMS_PER_PAGE = 1
+var MAX_STREAMS_PER_PAGE = 4
 
 type PaginationOrdering struct {
 	index  int
@@ -41,17 +41,34 @@ type SessionManager interface {
 	RemoveFromSessionManager(clientID string)
 
 	GetRouterPaginated(excludedCLientId *string, page int, pageSize int) (map[string][]*TrackRouter, int)
-	SuscribeToPageinatedRouters(session Session, page int, pageSize int)
+	SuscribeToPageinatedRouters(session Session, page int, pageSize int) error
 	HighlightStreamRouters(streamIDS []string, priority int)
 
 	AddClientGroupedStreams(clientID string, trackId string, router *TrackRouter)
 	RemoveClientSubscribedTrack(clientID string, trackId string)
 	GetClientGroupedStreams(clientID string) map[string][]*TrackRouter
+
+	GetGroupedRouters() map[string][]*TrackRouter
+	SetEmitFCN(func(event string, args ...interface{}))
 }
 
 type LobySession struct {
 	wsID    string
 	session Session
+}
+
+type RoomData struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	CreatedAt   int64  `json:"created_at"`
+	HostID      string `json:"host_id"`
+	IsPrivate   bool   `json:"is_private"`
+}
+
+type RoomCurrentState struct {
+	MaxiumPerPage              int `json:"maxium_per_page"`
+	CurrentTotalParticipants   int `json:"current_total_participants"`
+	CurrentTotalGroupedStreams int `json:"current_total_grouped_streams"`
 }
 
 type sessionManager struct {
@@ -67,6 +84,7 @@ type sessionManager struct {
 	lobby                   map[string]LobySession
 	mu                      sync.RWMutex
 	sessionSubscribedTracks map[string]map[string][]*TrackRouter // clientID -> streamGroupID  -> router
+	EmitFCN                 func(event string, args ...interface{})
 }
 
 func NewSessionManager(id string, autoAccept bool) SessionManager {
@@ -84,6 +102,16 @@ func NewSessionManager(id string, autoAccept bool) SessionManager {
 		hasChangedRouters:       true,
 		cachedOrderedRouters:    make([]string, 0),
 	}
+}
+
+func (sm *sessionManager) SetEmitFCN(fcn func(event string, args ...interface{})) {
+	sm.EmitFCN = fcn
+}
+
+func (sm *sessionManager) GetGroupedRouters() map[string][]*TrackRouter {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.groupedRouters
 }
 
 func (sm *sessionManager) GetClientGroupedStreams(clientID string) map[string][]*TrackRouter {
@@ -190,6 +218,12 @@ func (sm *sessionManager) AddSession(session Session, wsID string) bool {
 	}
 
 	sm.sessions[session.GetClientId()] = session
+
+	sm.EmitFCN("room_state_changed", RoomCurrentState{
+		MaxiumPerPage:              MAX_STREAMS_PER_PAGE,
+		CurrentTotalParticipants:   len(sm.sessions),
+		CurrentTotalGroupedStreams: len(sm.groupedRouters),
+	})
 	return true
 }
 
@@ -250,6 +284,12 @@ func (sm *sessionManager) AddRouter(trackId string, router *TrackRouter) {
 		sm.routers = append(sm.routers, router)
 		sm.hasChangedRouters = true
 	}
+
+	sm.EmitFCN("room_state_changed", RoomCurrentState{
+		MaxiumPerPage:              MAX_STREAMS_PER_PAGE,
+		CurrentTotalParticipants:   len(sm.sessions),
+		CurrentTotalGroupedStreams: len(sm.groupedRouters),
+	})
 }
 
 func (sm *sessionManager) GetRouter(streamId string) (*TrackRouter, bool) {
@@ -275,6 +315,12 @@ func (sm *sessionManager) RemoveRouter(streamId string) {
 			break
 		}
 	}
+
+	sm.EmitFCN("room_state_changed", RoomCurrentState{
+		MaxiumPerPage:              MAX_STREAMS_PER_PAGE,
+		CurrentTotalParticipants:   len(sm.sessions),
+		CurrentTotalGroupedStreams: len(sm.groupedRouters),
+	})
 }
 
 func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
@@ -345,6 +391,12 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 	if len(sm.GetSessions()) == 0 {
 		delete(GlobalSessionManager, sm.GetGroupId())
 	}
+
+	sm.EmitFCN("room_state_changed", RoomCurrentState{
+		MaxiumPerPage:              MAX_STREAMS_PER_PAGE,
+		CurrentTotalParticipants:   len(sm.sessions),
+		CurrentTotalGroupedStreams: len(sm.groupedRouters),
+	})
 
 	logger.Sugar.Infof("Removed session for client %s", clientID)
 }
@@ -435,12 +487,12 @@ func (sm *sessionManager) GetRouterPaginated(excludedClientId *string, page int,
 	return result, total
 }
 
-func (sm *sessionManager) SuscribeToPageinatedRouters(session Session, page int, pageSize int) {
+func (sm *sessionManager) SuscribeToPageinatedRouters(session Session, page int, pageSize int) error {
 	excludedClientId := session.GetClientId()
 	groupedRouters, _ := sm.GetRouterPaginated(&excludedClientId, page, pageSize)
 
 	if len(groupedRouters) == 0 {
-		return
+		return nil
 	}
 
 	for key, routers := range sm.GetClientGroupedStreams(session.GetClientId()) {
@@ -484,8 +536,10 @@ func (sm *sessionManager) SuscribeToPageinatedRouters(session Session, page int,
 	if shouldRenegotiate {
 		if err := session.Renegotiate(nil); err != nil {
 			logger.Sugar.Warnf("Failed to renegotiate session for client %s after subscribing to paginated routers: %v", session.GetClientId(), err)
+			return err
 		}
 	}
+	return nil
 }
 
 // priority 1 = host, 2 = speaker, 3 = all, 4 = none

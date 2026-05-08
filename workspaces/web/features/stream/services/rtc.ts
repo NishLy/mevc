@@ -4,15 +4,17 @@ import {
   LocalStreamsTuple,
   MediaCombinedStream,
   PendingEntry,
+  RoomState,
   TrackMeta,
 } from "../types/service"
 import { createBlackVideoTrack } from "./local"
-import { metadata, track } from "framer-motion/m"
+import { metadata, th, track } from "framer-motion/m"
 
 interface WebRTCServiceProps {
   onAddedRemoteStream?: (stream: MediaCombinedStream) => void
   onRemovedRemoteStream?: (streamId: string) => void
   onPeerStatusChanged?: (status: string) => void
+  onRoomStateChanged?: (state: RoomState) => void
 }
 
 export class WebRTCService {
@@ -46,6 +48,7 @@ export class WebRTCService {
     onAddedRemoteStream: () => {},
     onRemovedRemoteStream: () => {},
     onPeerStatusChanged: (status: string) => {},
+    onRoomStateChanged: (state: RoomState) => {},
   }
 
   constructor(
@@ -564,6 +567,14 @@ export class WebRTCService {
 
       this.options.onAddedRemoteStream?.(resolved.localStream)
     })
+
+    this.wsService?.on("room_state_changed", (state: RoomState) => {
+      this.options.onRoomStateChanged?.(state)
+    })
+  }
+
+  requestPageChange(page: number) {
+    this.emit("page_change_request", page)
   }
 
   destroy() {
@@ -575,5 +586,10 @@ export class WebRTCService {
     this.wsService?.off("ice_candidate")
     this.wsService?.off("new_track")
     this.wsService?.off("track_removed")
+    this.wsService?.off("room_state_changed")
+    this.wsService?.off("track_changed")
+    this.wsService?.off("peer_left")
+    this.wsService?.off("page_change_request")
+    this.wsService = null
   }
 }

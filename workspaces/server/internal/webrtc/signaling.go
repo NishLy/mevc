@@ -39,6 +39,10 @@ func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 
 	if GetGroupManagerFromConn(conn) == nil {
 		GlobalSessionManager[roomId] = NewSessionManager(roomId, true)
+		setEmitFunc := func(event string, args ...interface{}) {
+			hub.EmitTo(roomId, event, nil, args...)
+		}
+		GlobalSessionManager[roomId].SetEmitFCN(setEmitFunc)
 	}
 	sessionManager := GlobalSessionManager[roomId]
 	pc := MustCreatePeerConnection()
@@ -322,4 +326,30 @@ func HandlePeerConnectionStateChange(conn ws.WebSocketConnection, data ...any) {
 		// Handle other states if needed`
 	}
 
+}
+
+func HandlePageChangeRequest(conn ws.WebSocketConnection, data ...any) {
+	sessionManager := GetGroupManagerFromConn(conn)
+	if sessionManager == nil {
+		return
+	}
+
+	session, exists := sessionManager.GetSessionByWsID(conn.ID())
+	if !exists {
+		return
+	}
+
+	page := data[1].(float64)
+	if page == 0 {
+		return
+	}
+
+	pageInt := int(page)
+
+	if err := sessionManager.SuscribeToPageinatedRouters(session, pageInt, MAX_STREAMS_PER_PAGE); err != nil {
+		logger.Sugar.Errorf("Failed to subscribe to paginated routers for session %s: %v", session.GetClientId(), err)
+		return
+	}
+
+	session.SetCurrrentViewPage(pageInt)
 }

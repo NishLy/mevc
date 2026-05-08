@@ -67,6 +67,8 @@ export default function Room({ roomId }: RoomProps) {
     setRoomID,
     setRTCService,
     setParticipantsInLobby,
+    roomState,
+    currentPage,
   } = useMeet()
 
   console.log("Room component props:", { roomId, userName, clientId })
@@ -187,6 +189,9 @@ export default function Room({ roomId }: RoomProps) {
             setCurrentStatus(MeetConnectionState.Connected)
           }
         },
+        onRoomStateChanged: (roomState) => {
+          useMeet.setState({ roomState })
+        },
       }
     )
 
@@ -209,9 +214,15 @@ export default function Room({ roomId }: RoomProps) {
     RTCService.setLocalStreams(localStreams)
   }, [localStreams, RTCService, status])
 
+  useEffect(() => {
+    if (status !== MeetConnectionState.Connected || !RTCService) return
+    RTCService.requestPageChange(currentPage)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage])
+
   return (
     <>
-      <div className="mx-auto flex h-screen w-full items-center justify-center">
+      <div className="mx-auto flex h-screen w-full items-center justify-center overflow-hidden">
         {RenderLoading(status)}
 
         {status === MeetConnectionState.Connected && (

@@ -1,36 +1,48 @@
-import { motion } from "framer-motion"
-import { useState } from "react"
+"use client"
 
-const PersistentPiP = ({ children }: { children: React.ReactNode }) => {
-  const [position, setPosition] = useState({ x: 0, y: 0 })
+import { motion, useDragControls } from "framer-motion"
+import { useRef } from "react"
+
+const PersistentPiP = ({
+  children,
+  className,
+}: {
+  children: React.ReactNode
+  className?: string
+}) => {
+  // Use a ref to constrain the drag to the window boundaries
+  const constraintsRef = useRef(null)
 
   return (
-    <motion.div
-      drag
-      animate={{ x: position.x, y: position.y }}
-      onDragEnd={(_, info) => {
-        const newX = position.x + info.offset.x
-        const newY = position.y + info.offset.y
-
-        setPosition({ x: newX, y: newY })
-      }}
-      style={{
-        width: 300,
-        height: 180,
-        backgroundColor: "#222",
-        position: "fixed",
-        bottom: 50,
-        right: 50,
-        cursor: "grab",
-        borderRadius: "12px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "white",
-      }}
+    /* This invisible div acts as the "boundary" for the PiP */
+    <div
+      ref={constraintsRef}
+      className="pointer-events-none fixed inset-0 z-50"
     >
-      {children}
-    </motion.div>
+      <motion.div
+        drag
+        // Keeps the video inside the screen
+        dragConstraints={constraintsRef}
+        dragElastic={0.1}
+        dragMomentum={false}
+        whileDrag={{ scale: 1.05, cursor: "grabbing" }}
+        style={{
+          width: 300,
+          backgroundColor: "#27272a", // matches zinc-800
+          position: "fixed",
+          bottom: 50,
+          right: 50,
+          cursor: "grab",
+          borderRadius: "12px",
+          boxShadow:
+            "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
+          pointerEvents: "auto", // Re-enable clicks for the PiP itself
+        }}
+        className={className}
+      >
+        {children}
+      </motion.div>
+    </div>
   )
 }
 

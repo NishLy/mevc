@@ -153,4 +153,5 @@ func RegisterHandlers(hub ws.WsHub) {
 	// 	HandleStreamMetadataChanged(hub, conn, data...)
 	// })
 	hub.On("peer_status_changed", HandlePeerConnectionStateChange)
+	hub.On("page_change_request", HandlePageChangeRequest)
 }
