@@ -69,6 +69,7 @@ export default function Room({ roomId }: RoomProps) {
     setParticipantsInLobby,
   } = useMeet()
 
+  console.log("Room component props:", { roomId, userName, clientId })
   console.log("Room component rendered with status:", status, localStreams)
 
   useEffect(() => {
@@ -82,6 +83,11 @@ export default function Room({ roomId }: RoomProps) {
         listeners: {
           connect: () => {
             ws.emit("join_room", clientId, roomId, userName)
+            console.log("WebSocket connected, emitted join_room with:", {
+              clientId,
+              roomId,
+              userName,
+            })
           },
           joined_lobby: (joinedRoomId: string, participants: IUser[]) => {
             if (joinedRoomId === roomId) {

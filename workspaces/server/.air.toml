@@ -7,11 +7,10 @@ tmp_dir = "tmp"
 
 [build]
   delay = 1000
-  args_bin = ["-gcflags", "all=-N -l"]
-  cmd = "go build -gcflags='all=-N -l' -o ./tmp/main ./cmd/server"
+  cmd = "go build -gcflags='all=-N -l' -o ./tmp/main.exe ./cmd/server"
   include_ext = ["go", "tpl", "tmpl", "html"]
   exclude_dir = ["tmp", "vendor", "node_modules", "migrations"]
-  full_bin = "dlv exec ./tmp/main.exe --headless --listen=:2345 --api-version=2"
+  full_bin = "./tmp/main.exe"
 
 
 [color]

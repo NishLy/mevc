@@ -52,6 +52,9 @@ type Session interface {
 	Emit(event string, data ...any)
 
 	IsRemoteSet() bool
+
+	SetCurrrentViewPage(page int)
+	GetCurrentViewPage() int
 }
 
 type WaitTrackResult struct {
@@ -71,6 +74,7 @@ type session struct {
 	offerWaitChan      chan bool
 	selfTracksMetadata map[string]SessionTrackMetadata
 	Username           string `json:"userName"`
+	currentViewPage    int
 }
 
 func NewSession(pc *webrtc.PeerConnection, clientID string, userName string) Session {
@@ -85,7 +89,20 @@ func NewSession(pc *webrtc.PeerConnection, clientID string, userName string) Ses
 		closed:             false,
 		offerWaitChan:      make(chan bool, 1),
 		selfTracksMetadata: make(map[string]SessionTrackMetadata),
+		currentViewPage:    1,
 	}
+}
+
+func (s *session) GetCurrentViewPage() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.currentViewPage
+}
+
+func (s *session) SetCurrrentViewPage(page int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.currentViewPage = page
 }
 
 func (s *session) GetUsername() string {

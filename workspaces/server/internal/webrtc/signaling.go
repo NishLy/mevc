@@ -50,7 +50,7 @@ func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	})
 
 	// AttachExistingStreams(sessionManager, session)
-	RegisterSessionPCListeners(hub, sessionManager, session, conn)
+	go RegisterSessionPCListeners(hub, sessionManager, session, conn)
 
 	joined := sessionManager.AddSession(session, conn.ID())
 
@@ -217,27 +217,30 @@ func HandleTrackChanged(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) 
 		Username:      username,
 	}
 
-	session, exists := sessionManager.GetSession(clientID)
+	session, exist := sessionManager.GetSession(clientID)
 
-	if !exists || session == nil {
+	if !exist || session == nil {
 		return
 	}
 
-	_, exist := sessionManager.GetRouter(streamId)
+	_, exist = sessionManager.GetRouter(streamId)
 
 	if !exist {
 		newRouter := NewTrackRouter(session.GetPeerConnection(), clientID)
 		newRouter.SetMetadata(&metadata)
+		newRouter.SetStreamID(streamId)
+		newRouter.SetStreamGroupId(streamGroupId)
 
 		newRouter.Start()
 
 		sessionManager.AddRouter(streamId, newRouter)
+
 		hub.EmitTo(sessionManager.GetGroupId(), "new_track", &conn, session.GetClientId(), &metadata)
 	} else {
 		hub.EmitTo(sessionManager.GetGroupId(), "track_changed", &conn, session.GetClientId(), &metadata)
 	}
 
-	logger.Sugar.Infof("Client %s changed track %s (kind=%s) in stream group %s", clientID, streamId, kind, streamGroupId)
+	// logger.Sugar.Infof("Client %s changed track %s (kind=%s) in stream group %s", clientID, streamId, kind, streamGroupId)
 }
 
 func HandleRenegotiateAnswer(conn ws.WebSocketConnection, data ...any) (err error) {
@@ -291,4 +294,30 @@ func HandleRemoveTrack(conn ws.WebSocketConnection, data ...any) {
 	}
 
 	sessionManager.RemoveRouter(data[1].(string))
+}
+
+func HandlePeerConnectionStateChange(conn ws.WebSocketConnection, data ...any) {
+	sessionManager := GetGroupManagerFromConn(conn)
+	if sessionManager == nil {
+		return
+	}
+
+	session, exists := sessionManager.GetSessionByWsID(conn.ID())
+	if !exists {
+		return
+	}
+
+	state := data[1].(string)
+	if state == "" {
+		return
+	}
+
+	switch state {
+	case "connected":
+		sessionManager.SuscribeToPageinatedRouters(session, session.GetCurrentViewPage(), MAX_STREAMS_PER_PAGE)
+	default:
+		logger.Sugar.Infof("Peer Status Changed But No Handler Implemented for State: %s", state)
+		// Handle other states if needed`
+	}
+
 }

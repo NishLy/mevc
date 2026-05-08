@@ -1,10 +1,14 @@
 package rtc
 
 import (
+	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 )
+
+var MAX_STREAMS_PER_PAGE = 1
 
 type SessionManager interface {
 	GetGroupId() string
@@ -18,7 +22,7 @@ type SessionManager interface {
 	GetClientIDFromWsID(wsID string) (string, bool)
 	GetSessionByWsID(wsID string) (Session, bool)
 
-	AddRouter(streamID string, router *TrackRouter)
+	AddRouter(trackId string, router *TrackRouter)
 	GetRouter(streamID string) (*TrackRouter, bool)
 	RemoveRouter(streamID string)
 
@@ -30,9 +34,15 @@ type SessionManager interface {
 	// GetTemporaryMetadata(streamID string) (SessionTrackMetadata, bool)
 	// RemoveTemporaryMetadata(streamID string)
 
-	SubscribeToExistingTracks(newSession Session)
-
 	RemoveFromSessionManager(clientID string)
+
+	GetRouterPaginated(excludePublisherID *string, page int, pageSize int) (map[string][]*TrackRouter, int)
+	SuscribeToPageinatedRouters(session Session, page int, pageSize int)
+	HighlightStreamRouters(streamIDS []string, priority int)
+
+	AddClientGroupedStreams(clientID string, trackId string, router *TrackRouter)
+	RemoveClientSubscribedTrack(clientID string, trackId string)
+	GetClientGroupedStreams(clientID string) map[string][]*TrackRouter
 }
 
 type LobySession struct {
@@ -41,27 +51,67 @@ type LobySession struct {
 }
 
 type sessionManager struct {
-	id           string
-	sessions     map[string]Session
-	wsToClientId map[string]string
-	routers      map[string]*TrackRouter
-	autoClose    bool
-	autoAccept   bool
-	lobby        map[string]LobySession
-	mu           sync.RWMutex
+	id                      string
+	sessions                map[string]Session
+	wsToClientId            map[string]string
+	routers                 []*TrackRouter
+	hasChangedRouters       bool
+	groupedRouters          map[string][]*TrackRouter
+	autoClose               bool
+	autoAccept              bool
+	lobby                   map[string]LobySession
+	mu                      sync.RWMutex
+	sessionSubscribedTracks map[string]map[string][]*TrackRouter // clientID -> streamGroupID  -> router
 }
 
 func NewSessionManager(id string, autoAccept bool) SessionManager {
 	return &sessionManager{
-		id:           id,
-		sessions:     make(map[string]Session),
-		wsToClientId: make(map[string]string),
-		routers:      make(map[string]*TrackRouter),
-		autoClose:    true,
-		autoAccept:   autoAccept,
-		lobby:        make(map[string]LobySession),
-		mu:           sync.RWMutex{},
+		id:                      id,
+		sessions:                make(map[string]Session),
+		wsToClientId:            make(map[string]string),
+		routers:                 make([]*TrackRouter, 0),
+		autoClose:               true,
+		autoAccept:              autoAccept,
+		lobby:                   make(map[string]LobySession),
+		mu:                      sync.RWMutex{},
+		sessionSubscribedTracks: make(map[string]map[string][]*TrackRouter),
+		groupedRouters:          make(map[string][]*TrackRouter),
+		hasChangedRouters:       true,
 	}
+}
+
+func (sm *sessionManager) GetClientGroupedStreams(clientID string) map[string][]*TrackRouter {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	tracks, exist := sm.sessionSubscribedTracks[clientID]
+	if !exist {
+		return make(map[string][]*TrackRouter)
+	}
+	return tracks
+}
+
+func (sm *sessionManager) RemoveClientSubscribedTrack(clientID string, trackId string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if _, exist := sm.sessionSubscribedTracks[clientID]; exist {
+		delete(sm.sessionSubscribedTracks[clientID], trackId)
+	}
+}
+
+func (sm *sessionManager) AddClientGroupedStreams(clientID string, trackId string, router *TrackRouter) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	_, exist := sm.sessionSubscribedTracks[clientID]
+
+	if !exist {
+		sm.sessionSubscribedTracks[clientID] = make(map[string][]*TrackRouter)
+	}
+
+	if _, exist := sm.sessionSubscribedTracks[clientID]; !exist {
+		sm.sessionSubscribedTracks[clientID] = make(map[string][]*TrackRouter)
+	}
+
+	sm.sessionSubscribedTracks[clientID][trackId] = append(sm.sessionSubscribedTracks[clientID][trackId], router)
 }
 
 func (sm *sessionManager) GetLobbySessions() []LobySession {
@@ -178,67 +228,47 @@ func (sm *sessionManager) GetSessionByWsID(wsID string) (Session, bool) {
 	return session, exists
 }
 
-func (sm *sessionManager) SubscribeToExistingTracks(newSession Session) {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-
-	needsRenegotiation := false
-
-	for _, router := range sm.routers {
-		// Don't subscribe the user to their own published tracks
-		if router.publisherPC == newSession.GetPeerConnection() {
-			continue
-		}
-
-		err := router.AddViewer(newSession)
-		if err == nil {
-			needsRenegotiation = true
-
-			if router.hasStarted && router.metadata != nil {
-				newSession.Emit("new_track", router.incomingTrack.StreamID(), &SessionTrackMetadata{
-					TrackId:       router.incomingTrack.ID(),
-					StreamId:      router.incomingTrack.StreamID(),
-					Kind:          router.incomingTrack.Kind().String(),
-					ClientId:      router.publisherID,
-					StreamGroupId: router.metadata.StreamGroupId,
-					Label:         router.metadata.Label,
-					Enabled:       router.metadata.Enabled,
-					Username:      router.metadata.Username,
-				})
-			}
-		}
-	}
-
-	if needsRenegotiation {
-		newSession.Renegotiate(nil)
-	}
-}
-
 func (sm *sessionManager) AddRouter(trackId string, router *TrackRouter) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	if sm.routers == nil {
-		sm.routers = make(map[string]*TrackRouter)
+
+	var isExisting bool
+	for _, r := range sm.routers {
+		if r.streamID == trackId {
+			isExisting = true
+			break
+		}
 	}
-	sm.routers[trackId] = router
+
+	if !isExisting {
+		sm.routers = append(sm.routers, router)
+		sm.hasChangedRouters = true
+	}
 }
 
-func (sm *sessionManager) GetRouter(trackId string) (*TrackRouter, bool) {
+func (sm *sessionManager) GetRouter(streamId string) (*TrackRouter, bool) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	router, exists := sm.routers[trackId]
-	return router, exists
+	for _, router := range sm.routers {
+		if router.streamID == streamId {
+			return router, true
+		}
+	}
+	return nil, false
 }
 
-func (sm *sessionManager) RemoveRouter(trackId string) {
+func (sm *sessionManager) RemoveRouter(streamId string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	if router, exists := sm.routers[trackId]; exists {
-		router.Close()
+	for i, router := range sm.routers {
+		if router.streamID == streamId {
+			router.Close()
+			sm.routers = append(sm.routers[:i], sm.routers[i+1:]...)
+			sm.hasChangedRouters = true
+			break
+		}
 	}
-
-	delete(sm.routers, trackId)
 }
 
 func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
@@ -250,16 +280,26 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 	var routersToClose []string
 
 	sm.mu.RLock()
-	for id, router := range sm.routers {
+	for _, router := range sm.routers {
 		if router.publisherID == session.GetClientId() {
-			routersToClose = append(routersToClose, id)
+			routersToClose = append(routersToClose, router.streamID)
 		}
+
 		// Remove the viewer from all routers
 		if err := router.RemoveViewer(clientID); err != nil {
 			logger.Sugar.Warnf("Failed to remove viewer %s from router for stream %s: %v", clientID, router.incomingTrack.StreamID(), err)
 		}
 	}
 	sm.mu.RUnlock()
+
+	for _, sessions := range sm.sessions {
+		for _, router := range routersToClose {
+			sm.RemoveClientSubscribedTrack(sessions.GetClientId(), router) // Remove the track from all sessions' subscribed tracks management to clean up
+			sessions.Emit("track_removed", router)                         // Emit track_removed event for all sessions to remove the track from the UI
+		}
+	}
+
+	delete(sm.sessionSubscribedTracks, clientID) // Remove the client's subscribed tracks management since the client is leaving
 
 	// Now close all routers where this client was the publisher
 	for _, trackId := range routersToClose {
@@ -281,4 +321,168 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 	}
 
 	logger.Sugar.Infof("Removed session for client %s", clientID)
+}
+
+func (sm *sessionManager) GetRouterPaginated(excludePublisherID *string, page int, pageSize int) (map[string][]*TrackRouter, int) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	// make temp if router has changed since last pagination to regroup them, otherwise use the existing groupedRouters
+	if sm.hasChangedRouters {
+		// 1. Group the routers
+		tempGroups := make(map[string][]*TrackRouter)
+		for _, router := range sm.routers {
+			if router.publisherPC == nil || !router.hasStarted || (excludePublisherID != nil && router.publisherID == *excludePublisherID) {
+				continue
+			}
+			tempGroups[router.streamGroupId] = append(tempGroups[router.streamGroupId], router)
+		}
+		sm.groupedRouters = tempGroups
+		sm.hasChangedRouters = false
+	}
+
+	// 2. Extract and Sort keys to ensure consistent pagination
+	keys := make([]string, 0, len(sm.groupedRouters))
+	for k := range sm.groupedRouters {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys) // prevents random order on every call
+
+	total := len(keys)
+	start := (page - 1) * pageSize
+	if start < 0 {
+		start = 0
+	}
+
+	if start >= total {
+		return map[string][]*TrackRouter{}, total
+	}
+
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+
+	// 3. Slice the keys (segmentation)
+	pagedKeys := keys[start:end]
+
+	// 4. Build the final result only for the paged keys
+	result := make(map[string][]*TrackRouter)
+	for _, k := range pagedKeys {
+		result[k] = sm.groupedRouters[k]
+	}
+
+	return result, total
+}
+func (sm *sessionManager) SuscribeToPageinatedRouters(session Session, page int, pageSize int) {
+	clientID := session.GetClientId()
+	groupedRouters, _ := sm.GetRouterPaginated(&clientID, page, pageSize)
+
+	logger.Sugar.Debugf("Subscribing client %s to paginated routers for page %d with page size %d: subscribing to stream groups %v", session.GetClientId(), page, pageSize, func() []string {
+		keys := make([]string, 0, len(groupedRouters))
+		for k := range groupedRouters {
+			keys = append(keys, k+fmt.Sprintf("(%d tracks)", len(groupedRouters[k])))
+		}
+		return keys
+	}())
+
+	if len(groupedRouters) == 0 {
+		return
+	}
+
+	for _, routers := range sm.GetClientGroupedStreams(session.GetClientId()) {
+		for _, router := range routers {
+			router.RemoveViewer(session.GetClientId())                             // First remove the viewer from all currently subscribed routers to avoid duplicates
+			sm.RemoveClientSubscribedTrack(session.GetClientId(), router.streamID) // Remove all currently subscribed tracks from the session's management since we're going to resubscribe to a new paginated set of tracks
+			session.Emit("track_removed", router.streamGroupId)                    // Emit track_removed event for all currently subscribed tracks so the client can remove them from the UI
+		}
+	}
+
+	var shouldRenegotiate bool
+	for _, routers := range groupedRouters {
+		for _, router := range routers {
+			if router.publisherPC == session.GetPeerConnection() {
+				continue
+			}
+			err := router.AddViewer(session)
+
+			if err != nil {
+				logger.Sugar.Warnf("Failed to add viewer %s to router for stream %s: %v", session.GetClientId(), router.streamID, err)
+			}
+
+			shouldRenegotiate = true
+			// Add the router to the session's current subscribed tracks so it can manage it (e.g. remove it when unsubscribing or when the session is closed)
+			sm.AddClientGroupedStreams(session.GetClientId(), router.streamGroupId, router)
+			session.Emit("new_track", router.streamID, router.metadata) // Emit metadata for the track to the client so it can render it in the UI
+		}
+	}
+
+	if shouldRenegotiate {
+		if err := session.Renegotiate(nil); err != nil {
+			logger.Sugar.Warnf("Failed to renegotiate session for client %s after subscribing to paginated routers: %v", session.GetClientId(), err)
+		}
+	}
+}
+
+// priority 1 = host, 2 = speaker, 3 = all, 4 = none
+
+func (sm *sessionManager) HighlightStreamRouters(streamIDS []string, priority int) {
+	sm.mu.Lock()
+
+	var highlightedRouters []*TrackRouter
+
+	var hostPriorities []*TrackRouter
+	var speakerPriorities []*TrackRouter
+	var allPriorities []*TrackRouter
+	var nonePriorities []*TrackRouter
+
+	highlightMap := make(map[string]struct{})
+	for _, id := range streamIDS {
+		highlightMap[id] = struct{}{}
+	}
+
+	for _, router := range sm.routers {
+		if _, shouldHighlight := highlightMap[router.streamID]; shouldHighlight {
+			highlightedRouters = append(highlightedRouters, router)
+			continue
+		}
+
+		switch router.priority {
+		case 1:
+			hostPriorities = append(hostPriorities, router)
+		case 2:
+			speakerPriorities = append(speakerPriorities, router)
+		case 3:
+			allPriorities = append(allPriorities, router)
+		case 4:
+			nonePriorities = append(nonePriorities, router)
+		}
+	}
+
+	sm.routers = sm.routers[:0] // Clear the slice while keeping the allocated memory
+
+	switch priority {
+	case 1:
+		hostPriorities = append(highlightedRouters, hostPriorities...)
+	case 2:
+		speakerPriorities = append(highlightedRouters, speakerPriorities...)
+	case 3:
+		allPriorities = append(highlightedRouters, allPriorities...)
+	case 4:
+		nonePriorities = append(highlightedRouters, nonePriorities...)
+	}
+
+	sm.routers = append(sm.routers, hostPriorities...)
+	sm.routers = append(sm.routers, speakerPriorities...)
+	sm.routers = append(sm.routers, allPriorities...)
+	sm.routers = append(sm.routers, nonePriorities...)
+
+	sm.hasChangedRouters = true
+	sm.mu.Unlock()
+
+	// After reordering the routers, we need to trigger renegotiation for all sessions to ensure the new order is reflected on the client side
+	for _, session := range sm.sessions {
+		sm.SuscribeToPageinatedRouters(session, session.GetCurrentViewPage(), MAX_STREAMS_PER_PAGE) // Resubscribe to all routers to trigger renegotiation
+	}
 }

@@ -19,6 +19,8 @@ type Viewer struct {
 // TrackRouter handles a single incoming stream and broadcasts it to many viewers
 type TrackRouter struct {
 	sync.RWMutex
+	streamID      string
+	streamGroupId string
 	incomingTrack *webrtc.TrackRemote
 	publisherPC   *webrtc.PeerConnection // The person sending the video
 	viewers       map[string]*Viewer
@@ -26,6 +28,7 @@ type TrackRouter struct {
 	done          chan struct{}
 	hasStarted    bool
 	publisherID   string
+	priority      int
 }
 
 func NewTrackRouter(publisherPC *webrtc.PeerConnection, publisherID string) *TrackRouter {
@@ -36,6 +39,7 @@ func NewTrackRouter(publisherPC *webrtc.PeerConnection, publisherID string) *Tra
 		metadata:      nil,
 		publisherID:   publisherID,
 		done:          make(chan struct{}),
+		priority:      4, // Default to lowest priority
 	}
 
 	// START THE SINGLE READER LOOP HERE
@@ -43,9 +47,28 @@ func NewTrackRouter(publisherPC *webrtc.PeerConnection, publisherID string) *Tra
 	return router
 }
 
+func (r *TrackRouter) SetPriority(priority int) {
+	r.Lock()
+	r.priority = priority
+	r.Unlock()
+}
+
 func (r *TrackRouter) SetIncomingTrack(track *webrtc.TrackRemote) {
 	r.Lock()
 	r.incomingTrack = track
+	r.streamID = track.StreamID()
+	r.Unlock()
+}
+
+func (r *TrackRouter) SetStreamID(streamID string) {
+	r.Lock()
+	r.streamID = streamID
+	r.Unlock()
+}
+
+func (r *TrackRouter) SetStreamGroupId(streamGroupId string) {
+	r.Lock()
+	r.streamGroupId = streamGroupId
 	r.Unlock()
 }
 
@@ -138,7 +161,7 @@ func (r *TrackRouter) Start() {
 	go r.requestKeyframes()
 
 	r.hasStarted = true
-	logger.Sugar.Infof("Started router for stream %s with track %s (kind=%s)", r.incomingTrack.StreamID(), r.incomingTrack.ID(), r.incomingTrack.Kind().String())
+	// logger.Sugar.Infof("Started router for stream %s with track %s (kind=%s)", r.incomingTrack.StreamID(), r.incomingTrack.ID(), r.incomingTrack.Kind().String())
 }
 
 func (r *TrackRouter) RemoveViewer(viewerID string) error {

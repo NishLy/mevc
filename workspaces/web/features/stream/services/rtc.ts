@@ -227,13 +227,26 @@ export class WebRTCService {
       }
     }
 
-    this.peerConnection.onconnectionstatechange = () => {
-      if (this.peerConnection?.connectionState === "connected") {
-        this.emit("ice_connected", this.roomId)
+    this.peerConnection.oniceconnectionstatechange = (event) => {
+      switch (this.peerConnection?.iceConnectionState) {
+        case "connected":
+          setTimeout(() => {
+            this.emit("peer_status_changed", "connected")
+          }, 2000) // add a slight delay to ensure the connection is fully established before notifying
+          break
+        case "completed":
+        case "disconnected":
+          console.warn(
+            "Peer connection state changed to disconnected/completed, treating as disconnected:",
+            this.peerConnection.iceConnectionState,
+            "Reason",
+            event
+          )
+          break
+        case "failed":
+        default:
       }
-    }
 
-    this.peerConnection.oniceconnectionstatechange = () => {
       this.options.onPeerStatusChanged?.(
         this.peerConnection?.iceConnectionState ?? "unknown"
       )
@@ -512,10 +525,6 @@ export class WebRTCService {
 
         this.resolvedStreams.delete(streamGroupId)
         this.options.onRemovedRemoteStream?.(streamGroupId)
-
-        // this.sendOffer().catch((err) => {
-        //   console.error("Failed to renegotiate after track removal:", err)
-        // })
       }
     })
 

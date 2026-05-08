@@ -8,8 +8,6 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-var MAXIMUM_CONNECTION = 20
-
 var (
 	GlobalSessionManager = make(map[string]SessionManager)
 )
@@ -53,6 +51,11 @@ func MustCreatePeerConnection() *webrtc.PeerConnection {
 	me := &webrtc.MediaEngine{}
 	MustRegisterCodecs(me)
 
+	s := webrtc.SettingEngine{}
+
+	// Set ICE timeouts to detect disconnections faster and clean up resources
+	// s.SetICETimeouts(120, 120*time.Second, 10*time.Second)
+
 	ir := &interceptor.Registry{}
 	pli, err := intervalpli.NewReceiverInterceptor()
 	if err != nil {
@@ -63,7 +66,7 @@ func MustCreatePeerConnection() *webrtc.PeerConnection {
 		logger.Sugar.Errorf("Failed to register default interceptors: %v", err)
 	}
 
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithInterceptorRegistry(ir))
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithInterceptorRegistry(ir), webrtc.WithSettingEngine(s))
 	pc, err := api.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
 	})
@@ -95,10 +98,8 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 				continue
 			}
 
-			err := router.AddViewer(otherSession)
-
-			if err != nil {
-				logger.Sugar.Errorf("Failed to add viewer for session %s: %v", otherSession.GetClientId(), err)
+			// Avoid adding the viewer to the router if they've already subscribed to the maximum number of streams to prevent unnecessary renegotiation and resource usage
+			if len(sessionManager.GetClientGroupedStreams(otherSession.GetClientId())) >= MAX_STREAMS_PER_PAGE {
 				continue
 			}
 
@@ -106,27 +107,21 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 		}
 
 		for _, otherSession := range sessionsToBeRenegotiated {
-			err := otherSession.Renegotiate(nil)
-			if err != nil {
-				logger.Sugar.Errorf("Failed to renegotiate for session %s: %v", otherSession.GetClientId(), err)
-				continue
-			}
-		}
+			sessionManager.SuscribeToPageinatedRouters(otherSession, otherSession.GetCurrentViewPage(), MAX_STREAMS_PER_PAGE) // Resubscribe the viewer to the paginated set of tracks which will now include the new track
 
-		if router.hasStarted && router.metadata != nil {
-			hub.EmitTo(sessionManager.GetGroupId(), "new_track", &conn, session.GetClientId(), &SessionTrackMetadata{
+			otherSession.Emit("new_track", session.GetClientId(), &SessionTrackMetadata{
 				TrackId:       track.ID(),
 				StreamId:      track.StreamID(),
 				Kind:          track.Kind().String(),
 				ClientId:      session.GetClientId(),
-				StreamGroupId: router.metadata.StreamGroupId,
+				StreamGroupId: router.streamGroupId,
 				Label:         router.metadata.Label,
 				Username:      router.metadata.Username,
 				Enabled:       router.metadata.Enabled,
 			})
 		}
 
-		logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", session.GetClientId(), track.StreamID(), track.Kind().String(), router.metadata)
+		// logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", session.GetClientId(), track.StreamID(), track.Kind().String(), router.metadata)
 	})
 
 	session.GetPeerConnection().OnICECandidate(func(c *webrtc.ICECandidate) {
@@ -145,7 +140,7 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 		logger.Sugar.Infof("Peer Connection state: %s", state)
 
 		if state == webrtc.PeerConnectionStateConnected {
-			sessionManager.SubscribeToExistingTracks(session)
+			sessionManager.SuscribeToPageinatedRouters(session, session.GetCurrentViewPage(), MAX_STREAMS_PER_PAGE)
 		}
 
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
@@ -181,4 +176,5 @@ func RegisterHandlers(hub ws.WsHub) {
 	// hub.On("stream_metadata_changed", func(conn ws.WebSocketConnection, data ...any) {
 	// 	HandleStreamMetadataChanged(hub, conn, data...)
 	// })
+	// hub.On("peer_status_changed", HandlePeerConnectionStateChange)
 }
