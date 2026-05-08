@@ -232,7 +232,7 @@ export class WebRTCService {
         case "connected":
           setTimeout(() => {
             this.emit("peer_status_changed", "connected")
-          }, 2000) // add a slight delay to ensure the connection is fully established before notifying
+          }, 1000) // add a slight delay to ensure the connection is fully established before notifying
           break
         case "completed":
         case "disconnected":
@@ -422,11 +422,11 @@ export class WebRTCService {
   }
 
   // Simple wrapper around emit to ensure clientId and roomId are always included and to provide better type safety
-  private emit(eventName: string, data: unknown) {
+  private emit(eventName: string, ...data: unknown[]) {
     if (!this.wsService || !this.roomId) {
       throw new Error("Socket or room ID not initialized")
     }
-    this.wsService.emit(eventName, this.clientId, data)
+    this.wsService.emit(eventName, this.clientId, ...data)
   }
 
   private attachWSListeners() {

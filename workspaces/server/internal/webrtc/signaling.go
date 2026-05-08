@@ -50,7 +50,7 @@ func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	})
 
 	// AttachExistingStreams(sessionManager, session)
-	go RegisterSessionPCListeners(hub, sessionManager, session, conn)
+	RegisterSessionPCListeners(hub, sessionManager, session, conn)
 
 	joined := sessionManager.AddSession(session, conn.ID())
 
@@ -311,6 +311,8 @@ func HandlePeerConnectionStateChange(conn ws.WebSocketConnection, data ...any) {
 	if state == "" {
 		return
 	}
+
+	logger.Sugar.Infof("Status Peer %s", session.GetPeerConnection().ConnectionState().String())
 
 	switch state {
 	case "connected":

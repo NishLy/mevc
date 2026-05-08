@@ -91,37 +91,13 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 
 		sessionManager.AddRouter(track.StreamID(), router)
 
-		var sessionsToBeRenegotiated []Session
-
 		for _, otherSession := range sessionManager.GetSessions() {
 			if otherSession.GetClientId() == session.GetClientId() {
 				continue
 			}
 
-			// Avoid adding the viewer to the router if they've already subscribed to the maximum number of streams to prevent unnecessary renegotiation and resource usage
-			if len(sessionManager.GetClientGroupedStreams(otherSession.GetClientId())) >= MAX_STREAMS_PER_PAGE {
-				continue
-			}
-
-			sessionsToBeRenegotiated = append(sessionsToBeRenegotiated, otherSession)
+			sessionManager.SuscribeToPageinatedRouters(otherSession, otherSession.GetCurrentViewPage(), MAX_STREAMS_PER_PAGE) // Resubscribe the viewer to the paginated set of tracks which will now
 		}
-
-		for _, otherSession := range sessionsToBeRenegotiated {
-			sessionManager.SuscribeToPageinatedRouters(otherSession, otherSession.GetCurrentViewPage(), MAX_STREAMS_PER_PAGE) // Resubscribe the viewer to the paginated set of tracks which will now include the new track
-
-			otherSession.Emit("new_track", session.GetClientId(), &SessionTrackMetadata{
-				TrackId:       track.ID(),
-				StreamId:      track.StreamID(),
-				Kind:          track.Kind().String(),
-				ClientId:      session.GetClientId(),
-				StreamGroupId: router.streamGroupId,
-				Label:         router.metadata.Label,
-				Username:      router.metadata.Username,
-				Enabled:       router.metadata.Enabled,
-			})
-		}
-
-		// logger.Sugar.Infof("Client %s added track %s (kind=%s) to stream group %s", session.GetClientId(), track.StreamID(), track.Kind().String(), router.metadata)
 	})
 
 	session.GetPeerConnection().OnICECandidate(func(c *webrtc.ICECandidate) {
@@ -139,9 +115,9 @@ func RegisterSessionPCListeners(hub ws.WsHub, sessionManager SessionManager, ses
 	session.GetPeerConnection().OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		logger.Sugar.Infof("Peer Connection state: %s", state)
 
-		if state == webrtc.PeerConnectionStateConnected {
-			sessionManager.SuscribeToPageinatedRouters(session, session.GetCurrentViewPage(), MAX_STREAMS_PER_PAGE)
-		}
+		// if state == webrtc.PeerConnectionStateConnected {
+		// 	sessionManager.SuscribeToPageinatedRouters(session, session.GetCurrentViewPage(), MAX_STREAMS_PER_PAGE)
+		// }
 
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
 			sessionManager.RemoveFromSessionManager(session.GetClientId())
@@ -176,5 +152,5 @@ func RegisterHandlers(hub ws.WsHub) {
 	// hub.On("stream_metadata_changed", func(conn ws.WebSocketConnection, data ...any) {
 	// 	HandleStreamMetadataChanged(hub, conn, data...)
 	// })
-	// hub.On("peer_status_changed", HandlePeerConnectionStateChange)
+	hub.On("peer_status_changed", HandlePeerConnectionStateChange)
 }

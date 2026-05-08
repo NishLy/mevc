@@ -1,3 +1,5 @@
+'use client"'
+
 import { create } from "zustand/react"
 import {
   IUser,
@@ -9,8 +11,13 @@ import { MediaStreamController } from "../services/local"
 import { WebRTCService } from "../services/rtc"
 import WSservice from "@/lib/ws"
 
-const dummyClientId = "client_" + Math.random().toString(36).substr(2, 9)
-const dummyUsername = "User_" + Math.random().toString(36).substr(2, 5)
+const searchParams = new URLSearchParams(window.location.search)
+const dummyClientId =
+  searchParams.get("client_id") ||
+  "client_" + Math.random().toString(36).substr(2, 5)
+const dummyUsername =
+  searchParams.get("username") ||
+  "User_" + Math.random().toString(36).substr(2, 5)
 
 interface MeetState {
   clientId: string | null
