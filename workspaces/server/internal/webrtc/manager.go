@@ -283,12 +283,21 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 		return
 	}
 
-	var routersToClose []string
+	var routersToClose []struct {
+		streamGroupId string
+		streamID      string
+	}
 
 	sm.mu.RLock()
 	for _, router := range sm.routers {
 		if router.publisherID == session.GetClientId() {
-			routersToClose = append(routersToClose, router.streamID)
+			routersToClose = append(routersToClose, struct {
+				streamGroupId string
+				streamID      string
+			}{
+				streamGroupId: router.streamGroupId,
+				streamID:      router.streamID,
+			})
 		}
 
 		// Remove the viewer from all routers
@@ -301,15 +310,27 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 	delete(sm.sessionSubscribedTracks, clientID) // Remove the client's subscribed tracks management since the client is leaving
 
 	for _, trackId := range routersToClose {
-		sm.RemoveRouter(trackId)
+		sm.RemoveRouter(trackId.streamID)
 	}
 
-	for _, sessions := range sm.sessions {
+	delete(sm.sessions, clientID)
+
+	for _, session := range sm.sessions {
+		storage := sm.GetClientGroupedStreams(session.GetClientId())
+
+		// Check if this session is subscribed to any of the removed routers
+		hasRemovedTrack := false
 		for _, router := range routersToClose {
-			sm.RemoveClientSubscribedTrack(sessions.GetClientId(), router) // Remove the track from all sessions' subscribed tracks management to clean up
-			sessions.Emit("track_removed", router)                         // Emit track_removed event for all sessions to remove the track from the UI
+			if _, exist := storage[router.streamGroupId]; exist {
+				sm.RemoveClientSubscribedTrack(session.GetClientId(), router.streamGroupId) // Clean up first
+				hasRemovedTrack = true
+			}
 		}
-		sm.SuscribeToPageinatedRouters(sessions, sessions.GetCurrentViewPage(), MAX_STREAMS_PER_PAGE) // Resubscribe all sessions to the paginated set of tracks to trigger renegotiation and update the UI after removing the closed tracks
+
+		// Only resubscribe once per session, after all removed tracks are cleaned up
+		if hasRemovedTrack {
+			sm.SuscribeToPageinatedRouters(session, session.GetCurrentViewPage(), MAX_STREAMS_PER_PAGE)
+		}
 	}
 
 	for wsID, cid := range sm.wsToClientId {
@@ -319,7 +340,6 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 		}
 	}
 
-	delete(sm.sessions, clientID)
 	session.Close()
 
 	if len(sm.GetSessions()) == 0 {
