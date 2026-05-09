@@ -157,4 +157,11 @@ func RegisterHandlers(hub ws.WsHub) {
 
 	// This handler is for when the client requests the participant data, it will trigger a response with the current participant data of the session
 	hub.On("participant_data_request", HandleParticipantDataRequest)
+
+	// Chat handlers
+	hub.On("chat_message_sent", func(conn ws.WebSocketConnection, data ...any) {
+		HandleChatMessage(hub, conn, data...)
+	})
+	// This handler is for when the client requests the chat history, it will trigger a response with the current chat history of the session
+	hub.On("chat_history_request", HandleChatHistoryRequest)
 }

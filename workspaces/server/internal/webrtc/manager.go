@@ -61,6 +61,8 @@ type SessionManager interface {
 	SetEmitFCN(func(event string, args ...interface{}))
 
 	GetParticipantsData() []SessionParticipantData
+
+	GetChatService() *ChatService
 }
 
 type LobySession struct {
@@ -83,19 +85,25 @@ type RoomCurrentState struct {
 }
 
 type sessionManager struct {
-	id                      string
+	// own data
+	id         string
+	autoClose  bool
+	autoAccept bool
+	// session management
+	lobby                   map[string]LobySession
 	sessions                map[string]Session
 	wsToClientId            map[string]string
-	routers                 []*TrackRouter
-	hasChangedRouters       bool
-	cachedOrderedRouters    []string
-	groupedRouters          map[string][]*TrackRouter
-	autoClose               bool
-	autoAccept              bool
-	lobby                   map[string]LobySession
-	mu                      sync.RWMutex
 	sessionSubscribedTracks map[string]map[string][]*TrackRouter // clientID -> streamGroupID  -> router
-	EmitFCN                 func(event string, args ...interface{})
+	// track management
+	routers              []*TrackRouter
+	hasChangedRouters    bool
+	cachedOrderedRouters []string
+	groupedRouters       map[string][]*TrackRouter
+	// utility
+	mu      sync.RWMutex
+	EmitFCN func(event string, args ...interface{})
+	// chat management
+	chatService *ChatService
 }
 
 func NewSessionManager(id string, autoAccept bool) SessionManager {
@@ -112,7 +120,12 @@ func NewSessionManager(id string, autoAccept bool) SessionManager {
 		groupedRouters:          make(map[string][]*TrackRouter),
 		hasChangedRouters:       true,
 		cachedOrderedRouters:    make([]string, 0),
+		chatService:             NewChatService(),
 	}
+}
+
+func (sm *sessionManager) GetChatService() *ChatService {
+	return sm.chatService
 }
 
 func (sm *sessionManager) GetParticipantsData() []SessionParticipantData {
@@ -418,9 +431,9 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 
 	session.Close()
 
-	if len(sm.GetSessions()) == 0 {
-		delete(GlobalSessionManager, sm.GetGroupId())
-	}
+	// if len(sm.GetSessions()) == 0 {
+	// 	delete(GlobalSessionManager, sm.GetGroupId())
+	// }
 
 	sm.EmitFCN("room_state_changed", RoomCurrentState{
 		MaxiumPerPage:              MAX_STREAMS_PER_PAGE,

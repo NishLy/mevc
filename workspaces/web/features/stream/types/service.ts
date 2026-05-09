@@ -85,3 +85,11 @@ export interface ParticipantData {
   isVideoOff: boolean
   isRaisedHand: boolean
 }
+
+export interface ChatMessage {
+  senderId: string
+  senderName: string
+  timestamp: number
+  type: "text" | "system"
+  message: string
+}

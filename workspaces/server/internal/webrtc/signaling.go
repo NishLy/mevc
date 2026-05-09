@@ -2,9 +2,11 @@ package rtc
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/ws"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
+	pkg "github.com/NishLy/go-fiber-boilerplate/pkg/strings"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -321,6 +323,9 @@ func HandlePeerConnectionStateChange(conn ws.WebSocketConnection, data ...any) {
 	switch state {
 	case "connected":
 		sessionManager.SuscribeToPageinatedRouters(session, session.GetCurrentViewPage(), MAX_STREAMS_PER_PAGE)
+		chatHistory := sessionManager.GetChatService().GetHistory(50, 0)
+
+		conn.Emit("chat_history", chatHistory)
 	default:
 		logger.Sugar.Infof("Peer Status Changed But No Handler Implemented for State: %s", state)
 		// Handle other states if needed`
@@ -363,4 +368,53 @@ func HandleParticipantDataRequest(conn ws.WebSocketConnection, data ...any) {
 	participantsData := sessionManager.GetParticipantsData()
 
 	conn.Emit("participants_data_response", participantsData)
+}
+
+func HandleChatMessage(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
+	sessionManager := GetGroupManagerFromConn(conn)
+	if sessionManager == nil {
+		return
+	}
+
+	session, exists := sessionManager.GetSessionByWsID(conn.ID())
+	if !exists {
+		return
+	}
+
+	message, ok := data[1].(string)
+	if !ok || message == "" {
+		return
+	}
+
+	message = pkg.TruncateString(message, MAX_CHAT_MESSAGE_LENGTH)
+
+	chatMessage := ChatMessage{
+		SenderID:   session.GetClientId(),
+		SenderName: session.GetUsername(),
+		Message:    message,
+		Timestamp:  time.Now(),
+	}
+
+	sessionManager.GetChatService().AddMessage(chatMessage)
+
+	hub.EmitTo(sessionManager.GetGroupId(), "chat_message_sent", &conn, chatMessage)
+}
+
+func HandleChatHistoryRequest(conn ws.WebSocketConnection, data ...any) {
+	sessionManager := GetGroupManagerFromConn(conn)
+	if sessionManager == nil {
+		return
+	}
+
+	_, exists := sessionManager.GetSessionByWsID(conn.ID())
+	if !exists {
+		return
+	}
+
+	lastN := 50
+	skip := int(data[1].(float64))
+
+	chatHistory := sessionManager.GetChatService().GetHistory(lastN, skip)
+
+	conn.Emit("chat_history_response", chatHistory)
 }

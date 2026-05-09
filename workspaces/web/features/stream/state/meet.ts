@@ -2,6 +2,7 @@
 
 import { create } from "zustand/react"
 import {
+  ChatMessage,
   IUser,
   LocalStreamsTuple,
   MediaCombinedStream,
@@ -52,6 +53,8 @@ interface MeetState {
   roomState: RoomState
   currentPage: number
   participants: ParticipantData[]
+  chatMessages: ChatMessage[]
+  isChatAllFetched: boolean
   setParticipantsInLobby: (participants: IUser[]) => void
   setRoomID: (roomId: string) => void
   setCurrentStatus: (status: MeetConnectionState) => void
@@ -96,6 +99,8 @@ const useMeet = create<MeetState>((set) => ({
   },
   currentPage: 1,
   participants: [],
+  chatMessages: [],
+  isChatAllFetched: false,
   setParticipantsInLobby: (participants: IUser[]) =>
     set({ lobbyParticipants: participants }),
   setRoomID: (roomId) => set({ roomId }),
