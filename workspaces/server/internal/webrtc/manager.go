@@ -3,6 +3,7 @@ package rtc
 import (
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 )
@@ -104,6 +105,9 @@ type sessionManager struct {
 	EmitFCN func(event string, args ...interface{})
 	// chat management
 	chatService *ChatService
+
+	// clean up management
+	selfDeleteTimer *time.Timer
 }
 
 func NewSessionManager(id string, autoAccept bool) SessionManager {
@@ -143,6 +147,7 @@ func (sm *sessionManager) GetParticipantsData() []SessionParticipantData {
 			RaisedHand: sessionState.IsRaisedHand,
 		})
 	}
+
 	return participants
 }
 
@@ -278,6 +283,12 @@ func (sm *sessionManager) CloseAll() error {
 	}
 	sm.sessions = make(map[string]Session)
 	sm.wsToClientId = make(map[string]string)
+	for _, router := range sm.routers {
+		router.Close()
+	}
+	sm.routers = make([]*TrackRouter, 0)
+	sm.groupedRouters = make(map[string][]*TrackRouter)
+	sm.chatService.Close()
 	return nil
 }
 
@@ -431,9 +442,23 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 
 	session.Close()
 
-	// if len(sm.GetSessions()) == 0 {
-	// 	delete(GlobalSessionManager, sm.GetGroupId())
-	// }
+	if len(sm.GetSessions()) == 0 {
+		if sm.selfDeleteTimer != nil {
+			sm.selfDeleteTimer.Stop() // Stop any existing timer to avoid multiple timers running if multiple clients leave in quick succession
+		}
+
+		sm.selfDeleteTimer = time.AfterFunc(5*time.Minute, func() {
+			if len(sm.GetSessions()) == 0 {
+				logger.Sugar.Infof("No sessions rejoined within the grace period, performing final cleanup for session manager %s", sm.id)
+				sm.CloseAll()                       // Ensure all resources are cleaned up
+				delete(GlobalSessionManager, sm.id) // Remove the session manager from the global map to allow garbage collection
+			} else {
+				if sm.selfDeleteTimer != nil {
+					sm.selfDeleteTimer.Stop()
+				}
+			}
+		})
+	}
 
 	sm.EmitFCN("room_state_changed", RoomCurrentState{
 		MaxiumPerPage:              MAX_STREAMS_PER_PAGE,

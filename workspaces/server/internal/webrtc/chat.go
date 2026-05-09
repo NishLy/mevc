@@ -87,3 +87,9 @@ func (cs *ChatService) ClearHistory() {
 	defer cs.mu.Unlock()
 	cs.history = make([]ChatMessage, 0)
 }
+
+func (cs *ChatService) Close() {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.history = nil
+}

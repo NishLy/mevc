@@ -99,7 +99,7 @@ function ChatRow({ msg }: { msg: ChatMessage }) {
         </span>
       </div>
       <div
-        className={`max-w-[90%] px-2.5 py-1.5 text-[12.5px] leading-relaxed whitespace-pre-wrap ${
+        className={`max-w-[90%] overflow-hidden px-2.5 py-1.5 text-[12.5px] leading-relaxed wrap-break-word whitespace-pre-wrap ${
           msg.senderId === "you"
             ? "rounded-lg rounded-tr-none bg-blue-900/60 text-zinc-100"
             : "rounded-lg rounded-tl-none bg-zinc-700/60 text-zinc-200"
