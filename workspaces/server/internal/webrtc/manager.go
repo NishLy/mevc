@@ -550,7 +550,6 @@ func (sm *sessionManager) SuscribeToPageinatedRouters(session Session, page int,
 			err := router.AddViewer(session)
 
 			if err != nil {
-				logger.Sugar.Warnf("Failed to add viewer %s to router for stream %s: %v", session.GetClientId(), router.streamID, err)
 				continue
 			}
 

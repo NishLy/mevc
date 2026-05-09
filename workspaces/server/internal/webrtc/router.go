@@ -113,10 +113,14 @@ func (r *TrackRouter) AddViewer(viewerSession Session) error {
 		return fmt.Errorf("viewer already exists")
 	}
 
-	viewerPC := viewerSession.GetPeerConnection()
-
 	if r.incomingTrack == nil {
 		return fmt.Errorf("incoming track not set yet")
+	}
+
+	viewerPC := viewerSession.GetPeerConnection()
+
+	if viewerPC == nil || viewerPC.ConnectionState() == webrtc.PeerConnectionStateClosed {
+		return fmt.Errorf("viewer peer connection is not open")
 	}
 
 	// 1. Create the outgoing track for this specific viewer

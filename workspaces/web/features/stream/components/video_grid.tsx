@@ -35,16 +35,15 @@ export default function VideosGrid() {
     roomState.current_total_grouped_streams / roomState.maxium_per_page
   )
 
-  const streams = useMemo(
-    () => [...localStreams, ...remoteStreams].filter((s) => !!s),
-    [localStreams, remoteStreams]
-  )
-
   const pinnedStreams = useDeferredValue(
-    streams.filter((s) => useMeet.getState().pinnedStreamIds.includes(s.id))
+    remoteStreams.filter((s) =>
+      useMeet.getState().pinnedStreamIds.includes(s.id)
+    )
   )
   const unpinnedStreams = useDeferredValue(
-    streams.filter((s) => !useMeet.getState().pinnedStreamIds.includes(s.id))
+    remoteStreams.filter(
+      (s) => !useMeet.getState().pinnedStreamIds.includes(s.id)
+    )
   )
 
   // const skeletonArray = Array.from({ length: roomState.maxium_per_page }, (_, i) => i)
@@ -72,7 +71,7 @@ export default function VideosGrid() {
         )}
       >
         <AnimatePresence mode="popLayout">
-          {/* {localStreams
+          {localStreams
             .filter((s) => !!s)
             .map((s) => (
               <PersistentPiP key={s.id} className="z-40 aspect-video">
@@ -80,7 +79,7 @@ export default function VideosGrid() {
                   <VideoTile {...s} />
                 </div>
               </PersistentPiP>
-            ))} */}
+            ))}
 
           {unpinnedStreams.map((s) => (
             <motion.div
