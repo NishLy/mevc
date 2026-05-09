@@ -291,34 +291,44 @@ export default function ControlBar() {
 
           <div className="mx-2 h-8 w-px bg-white/10" />
 
-          {/* Security — dummy */}
           <ControlButton
             icon={<Shield className="h-4 w-4" />}
             label="Security"
             tooltip="Security options"
           />
 
-          {/* Participants — dummy */}
           <ControlButton
             icon={<Users className="h-4 w-4" />}
-            label="Participants"
-            tooltip="Show participants"
+            label={
+              isParticipantsOpen ? "Close Participants" : "Open Participants"
+            }
+            tooltip={
+              isParticipantsOpen
+                ? "Close participant list"
+                : "View participants"
+            }
             caretContent={
               <div className="px-3 py-3 text-sm text-white/60">
                 <Badge
-                  variant="secondary"
-                  className="mb-2 border-0 bg-indigo-500/20 text-indigo-300"
+                  variant="default"
+                  className="mb-2 w-full border-0 bg-indigo-500/20 text-indigo-300"
                 >
                   {roomState.current_total_participants} participants
                 </Badge>
-                <p className="text-xs text-white/30">
-                  Participant list coming soon
-                </p>
               </div>
             }
+            onClick={() => {
+              useMeet.setState((state) => ({
+                uiControls: {
+                  ...state.uiControls,
+                  isChatOpen: false,
+                  isParticipantsOpen: !state.uiControls.isParticipantsOpen,
+                },
+              }))
+            }}
+            active={isParticipantsOpen}
           />
 
-          {/* Chat — dummy */}
           <ControlButton
             icon={<MessageSquare className="h-4 w-4" />}
             label={isChatOpen ? "Close Chat" : "Open Chat"}
@@ -327,6 +337,7 @@ export default function ControlBar() {
               useMeet.setState((state) => ({
                 uiControls: {
                   ...state.uiControls,
+                  isParticipantsOpen: false,
                   isChatOpen: !state.uiControls.isChatOpen,
                 },
               }))

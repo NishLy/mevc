@@ -14,6 +14,15 @@ type PaginationOrdering struct {
 	tracks []*TrackRouter
 }
 
+type SessionParticipantData struct {
+	ClientID   string `json:"clientId"`
+	Username   string `json:"username"`
+	Role       string `json:"role"`
+	Muted      bool   `json:"muted"`
+	VideoOff   bool   `json:"videoOff"`
+	RaisedHand bool   `json:"raisedHand"`
+}
+
 type SessionManager interface {
 	GetGroupId() string
 
@@ -50,6 +59,8 @@ type SessionManager interface {
 
 	GetGroupedRouters() map[string][]*TrackRouter
 	SetEmitFCN(func(event string, args ...interface{}))
+
+	GetParticipantsData() []SessionParticipantData
 }
 
 type LobySession struct {
@@ -102,6 +113,24 @@ func NewSessionManager(id string, autoAccept bool) SessionManager {
 		hasChangedRouters:       true,
 		cachedOrderedRouters:    make([]string, 0),
 	}
+}
+
+func (sm *sessionManager) GetParticipantsData() []SessionParticipantData {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	participants := make([]SessionParticipantData, 0, len(sm.sessions))
+	for _, session := range sm.sessions {
+		sessionState := session.GetCurrentState()
+		participants = append(participants, SessionParticipantData{
+			ClientID:   session.GetClientId(),
+			Username:   session.GetUsername(),
+			Role:       "speaker", // Not implemented yet, defaulting to speaker for now, can be extended in the future to support different roles and permissions
+			Muted:      sessionState.IsMuted,
+			VideoOff:   sessionState.IsVideoOff,
+			RaisedHand: sessionState.IsRaisedHand,
+		})
+	}
+	return participants
 }
 
 func (sm *sessionManager) SetEmitFCN(fcn func(event string, args ...interface{})) {
@@ -224,6 +253,7 @@ func (sm *sessionManager) AddSession(session Session, wsID string) bool {
 		CurrentTotalParticipants:   len(sm.sessions),
 		CurrentTotalGroupedStreams: len(sm.groupedRouters),
 	})
+
 	return true
 }
 

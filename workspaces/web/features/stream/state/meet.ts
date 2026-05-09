@@ -6,6 +6,7 @@ import {
   LocalStreamsTuple,
   MediaCombinedStream,
   MeetConnectionState,
+  ParticipantData,
   RoomState,
 } from "../types/service"
 import { MediaStreamController } from "../services/local"
@@ -50,6 +51,7 @@ interface MeetState {
   lobbyParticipants: IUser[]
   roomState: RoomState
   currentPage: number
+  participants: ParticipantData[]
   setParticipantsInLobby: (participants: IUser[]) => void
   setRoomID: (roomId: string) => void
   setCurrentStatus: (status: MeetConnectionState) => void
@@ -93,6 +95,7 @@ const useMeet = create<MeetState>((set) => ({
     current_total_grouped_streams: 1,
   },
   currentPage: 1,
+  participants: [],
   setParticipantsInLobby: (participants: IUser[]) =>
     set({ lobbyParticipants: participants }),
   setRoomID: (roomId) => set({ roomId }),

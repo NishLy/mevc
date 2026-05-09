@@ -3,6 +3,7 @@ import {
   LOCAL_STREAM_TYPE,
   LocalStreamsTuple,
   MediaCombinedStream,
+  ParticipantData,
   PendingEntry,
   RoomState,
   TrackMeta,
@@ -15,6 +16,7 @@ interface WebRTCServiceProps {
   onRemovedRemoteStream?: (streamId: string) => void
   onPeerStatusChanged?: (status: string) => void
   onRoomStateChanged?: (state: RoomState) => void
+  onParticipantDataChanged?: (participants: ParticipantData[]) => void
 }
 
 export class WebRTCService {
@@ -236,6 +238,8 @@ export class WebRTCService {
           setTimeout(() => {
             this.emit("peer_status_changed", "connected")
           }, 1000) // add a slight delay to ensure the connection is fully established before notifying
+
+          this.emit("participant_data_request")
           break
         case "completed":
         case "disconnected":
@@ -570,7 +574,16 @@ export class WebRTCService {
 
     this.wsService?.on("room_state_changed", (state: RoomState) => {
       this.options.onRoomStateChanged?.(state)
+      // Trigger a participant data refresh whenever room state changes to ensure participant list is up to date (e.g. when someone joins/leaves or toggles their media)
+      this.emit("participant_data_request")
     })
+
+    this.wsService?.on(
+      "participants_data_response",
+      (participants: ParticipantData[]) => {
+        this.options.onParticipantDataChanged?.(participants)
+      }
+    )
   }
 
   requestPageChange(page: number) {

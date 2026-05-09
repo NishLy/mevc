@@ -154,4 +154,7 @@ func RegisterHandlers(hub ws.WsHub) {
 	// })
 	hub.On("peer_status_changed", HandlePeerConnectionStateChange)
 	hub.On("page_change_request", HandlePageChangeRequest)
+
+	// This handler is for when the client requests the participant data, it will trigger a response with the current participant data of the session
+	hub.On("participant_data_request", HandleParticipantDataRequest)
 }

@@ -36,7 +36,7 @@ export default function VideosGrid() {
   )
 
   const streams = useMemo(
-    () => [...remoteStreams],
+    () => [...localStreams, ...remoteStreams].filter((s) => !!s),
     [localStreams, remoteStreams]
   )
 
@@ -72,7 +72,7 @@ export default function VideosGrid() {
         )}
       >
         <AnimatePresence mode="popLayout">
-          {localStreams
+          {/* {localStreams
             .filter((s) => !!s)
             .map((s) => (
               <PersistentPiP key={s.id} className="z-40 aspect-video">
@@ -80,7 +80,7 @@ export default function VideosGrid() {
                   <VideoTile {...s} />
                 </div>
               </PersistentPiP>
-            ))}
+            ))} */}
 
           {unpinnedStreams.map((s) => (
             <motion.div

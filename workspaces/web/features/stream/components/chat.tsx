@@ -26,6 +26,12 @@ import {
 } from "lucide-react"
 import useMeet from "../state/meet"
 import classNames from "classnames"
+import { generateInitials } from "@/lib/strings"
+import ColorGen from "@/lib/color"
+import { ParticipantData } from "../types/service"
+import { Dialog } from "radix-ui"
+import { AnimatePresence, motion } from "framer-motion"
+import { useOnClickOutside } from "@/hooks/touch"
 
 const DUMMY_MESSAGES = [
   { id: 1, type: "system", text: "Meeting started · 23:20" },
@@ -86,63 +92,29 @@ const DUMMY_MESSAGES = [
   },
 ]
 
-const PARTICIPANTS = [
-  {
-    id: 1,
-    initials: "AJ",
-    name: "Alex Johnson",
-    role: "Host",
-    color: "bg-blue-600",
-    muted: false,
-  },
-  {
-    id: 2,
-    initials: "SR",
-    name: "Sarah R.",
-    role: null,
-    color: "bg-teal-700",
-    muted: true,
-  },
-  {
-    id: 3,
-    initials: "MK",
-    name: "Mike K.",
-    role: null,
-    color: "bg-orange-700",
-    muted: false,
-  },
-  {
-    id: 4,
-    initials: "Me",
-    name: "You",
-    role: "me",
-    color: "bg-violet-700",
-    muted: false,
-  },
-]
-
 function ParticipantRow({
   participant,
 }: {
-  participant: (typeof PARTICIPANTS)[number]
+  participant: ParticipantData & { initials: string; color: string }
 }) {
   return (
     <div className="flex items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-zinc-700/40">
       <div
-        className={`h-8 w-8 rounded-full ${participant.color} flex shrink-0 items-center justify-center text-xs font-medium text-white`}
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white`}
+        style={{ backgroundColor: participant.color }}
       >
         {participant.initials}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-zinc-200">{participant.name}</p>
+        <p className="truncate text-sm text-zinc-200">{participant.username}</p>
         {participant.role === "Host" && (
           <p className="text-[11px] text-blue-400">Host</p>
         )}
       </div>
-      {participant.muted && (
+      {participant.isMuted && (
         <MicOff className="h-3.5 w-3.5 shrink-0 text-red-400" />
       )}
-      {!participant.muted && (
+      {!participant.isMuted && (
         <Mic className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
       )}
     </div>
@@ -187,7 +159,31 @@ const ChatTabs = () => {
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState(DUMMY_MESSAGES)
   const [input, setInput] = useState("")
-  const { isChatOpen } = useMeet((state) => state.uiControls)
+  const { isChatOpen, isParticipantsOpen } = useMeet(
+    (state) => state.uiControls
+  )
+  const containerRef = useRef<HTMLDivElement | null>(null)
+
+  const participants = useMeet((state) => state.participants)
+
+  const closeAll = () => {
+    useMeet.setState((state) => ({
+      uiControls: {
+        ...state.uiControls,
+        isChatOpen: false,
+        isParticipantsOpen: false,
+      },
+    }))
+  }
+
+  useOnClickOutside(containerRef as React.RefObject<HTMLDivElement>, closeAll)
+  const isOpen = isChatOpen || isParticipantsOpen
+
+  const memoizedParticipants = participants.map((p) => ({
+    ...p,
+    initials: generateInitials(p.username),
+    color: ColorGen.next(),
+  }))
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -221,81 +217,127 @@ const ChatTabs = () => {
   }
 
   return (
-    <div
-      className={classNames(
-        "fixed top-0 right-0 bottom-0 z-50 flex h-screen w-64 translate-x-0 flex-col border-l border-zinc-700/50 bg-[#1a1a28]/95 transition-transform duration-300 ease-in-out xl:w-xl",
-        isChatOpen ? "translate-x-0" : "translate-x-full"
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Optional: Dark backdrop that fades in */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px]"
+          />
+
+          {/* The Sidebar */}
+          <motion.div
+            ref={containerRef}
+            initial={{ x: "100%" }} // Start off-screen
+            animate={{ x: 0 }} // Slide in
+            exit={{ x: "100%" }} // Slide out
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            className="fixed top-0 right-0 bottom-0 z-50 flex h-screen w-64 flex-col border-l border-zinc-700/50 bg-[#1a1a28]/95 xl:w-xl"
+          >
+            <Tabs
+              defaultValue="chat"
+              className="flex min-h-0 flex-1 flex-col"
+              value={
+                isChatOpen
+                  ? "chat"
+                  : isParticipantsOpen
+                    ? "participants"
+                    : undefined
+              }
+            >
+              {/* Tab headers */}
+              <div className="border-b border-zinc-700/50 p-2 px-3">
+                <TabsList className="h-8 w-full bg-zinc-700/40">
+                  <TabsTrigger
+                    value="chat"
+                    className="flex-1 cursor-pointer text-xs data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=inactive]:text-zinc-400"
+                    onClick={() => {
+                      useMeet.setState((state) => ({
+                        uiControls: {
+                          ...state.uiControls,
+                          isChatOpen: !state.uiControls.isChatOpen,
+                          isParticipantsOpen: false,
+                        },
+                      }))
+                    }}
+                  >
+                    <MessageSquare className="mr-1 h-3 w-3" />
+                    Chat
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="participants"
+                    className="flex-1 cursor-pointer text-xs data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=inactive]:text-zinc-400"
+                    onClick={() => {
+                      useMeet.setState((state) => ({
+                        uiControls: {
+                          ...state.uiControls,
+                          isParticipantsOpen:
+                            !state.uiControls.isParticipantsOpen,
+                          isChatOpen: false,
+                        },
+                      }))
+                    }}
+                  >
+                    <Users className="mr-1 h-3 w-3" />
+                    Participants ({memoizedParticipants.length})
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              {/* Chat tab */}
+              <TabsContent
+                value="chat"
+                className="mt- flex h-full min-h-0 flex-1 flex-col"
+              >
+                <div className="flex-1 overflow-y-auto px-3 py-2">
+                  <div className="flex flex-col gap-3">
+                    {messages.map((msg) => (
+                      <ChatMessage key={msg.id} msg={msg} />
+                    ))}
+                    <div ref={bottomRef} />
+                  </div>
+                </div>
+
+                <Separator className="mt-4 bg-zinc-700/50" />
+
+                <div className="flex items-end gap-2 p-2">
+                  <Textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Message everyone..."
+                    className="max-h-20 min-h-9 flex-1 resize-none rounded-2xl border-zinc-600/50 bg-zinc-700/50 px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-blue-500"
+                    rows={1}
+                  />
+                  <Button
+                    size="icon"
+                    onClick={sendMessage}
+                    disabled={!input.trim()}
+                    className="h-8 w-8 shrink-0 rounded-full bg-blue-600 hover:bg-blue-500 disabled:opacity-30"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </TabsContent>
+
+              {/* Participants tab */}
+              <TabsContent value="participants" className="mt-0 min-h-0 flex-1">
+                <ScrollArea className="h-full px-2 py-2">
+                  <div className="flex flex-col gap-0.5">
+                    {memoizedParticipants.map((p) => (
+                      <ParticipantRow key={p.clientId} participant={p} />
+                    ))}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+            </Tabs>
+          </motion.div>
+        </>
       )}
-    >
-      <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col">
-        {/* Tab headers */}
-        <div className="border-b border-zinc-700/50 px-3 pt-2">
-          <TabsList className="h-8 w-full bg-zinc-700/40">
-            <TabsTrigger
-              value="chat"
-              className="flex-1 text-xs data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=inactive]:text-zinc-400"
-            >
-              <MessageSquare className="mr-1 h-3 w-3" />
-              Chat
-            </TabsTrigger>
-            <TabsTrigger
-              value="participants"
-              className="flex-1 text-xs data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=inactive]:text-zinc-400"
-            >
-              <Users className="mr-1 h-3 w-3" />
-              People ({PARTICIPANTS.length})
-            </TabsTrigger>
-          </TabsList>
-        </div>
-
-        {/* Chat tab */}
-        <TabsContent
-          value="chat"
-          className="mt-0 flex h-full min-h-0 flex-1 flex-col"
-        >
-          <div className="flex-1 overflow-y-auto px-3 py-2">
-            <div className="flex flex-col gap-3">
-              {messages.map((msg) => (
-                <ChatMessage key={msg.id} msg={msg} />
-              ))}
-              <div ref={bottomRef} />
-            </div>
-          </div>
-
-          <Separator className="bg-zinc-700/50" />
-
-          <div className="flex items-end gap-2 p-2">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Message everyone..."
-              className="max-h-20 min-h-[36px] flex-1 resize-none rounded-2xl border-zinc-600/50 bg-zinc-700/50 px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-blue-500"
-              rows={1}
-            />
-            <Button
-              size="icon"
-              onClick={sendMessage}
-              disabled={!input.trim()}
-              className="h-8 w-8 shrink-0 rounded-full bg-blue-600 hover:bg-blue-500 disabled:opacity-30"
-            >
-              <Send className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </TabsContent>
-
-        {/* Participants tab */}
-        <TabsContent value="participants" className="mt-0 min-h-0 flex-1">
-          <ScrollArea className="h-full px-2 py-2">
-            <div className="flex flex-col gap-0.5">
-              {PARTICIPANTS.map((p) => (
-                <ParticipantRow key={p.id} participant={p} />
-              ))}
-            </div>
-          </ScrollArea>
-        </TabsContent>
-      </Tabs>
-    </div>
+    </AnimatePresence>
   )
 }
 

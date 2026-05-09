@@ -67,7 +67,6 @@ export default function Room({ roomId }: RoomProps) {
     setRoomID,
     setRTCService,
     setParticipantsInLobby,
-    roomState,
     currentPage,
   } = useMeet()
 
@@ -191,6 +190,9 @@ export default function Room({ roomId }: RoomProps) {
         },
         onRoomStateChanged: (roomState) => {
           useMeet.setState({ roomState })
+        },
+        onParticipantDataChanged: (participants) => {
+          useMeet.setState({ participants: participants })
         },
       }
     )

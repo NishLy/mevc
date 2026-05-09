@@ -36,6 +36,12 @@ type SessionTracks struct {
 	mu     sync.RWMutex
 }
 
+type SessionState struct {
+	IsMuted      bool `json:"isMuted"`
+	IsVideoOff   bool `json:"isVideoOff"`
+	IsRaisedHand bool `json:"isRaisedHand"`
+}
+
 type Session interface {
 	GetPeerConnection() *webrtc.PeerConnection
 	GetClientId() string
@@ -55,6 +61,9 @@ type Session interface {
 
 	SetCurrrentViewPage(page int)
 	GetCurrentViewPage() int
+
+	SetCurrentState(state SessionState)
+	GetCurrentState() SessionState
 }
 
 type WaitTrackResult struct {
@@ -63,9 +72,9 @@ type WaitTrackResult struct {
 }
 
 type session struct {
-	pc *webrtc.PeerConnection
-	// transceivers         []*ManagedTransceiver
+	// business state
 	ClientID           string `json:"clientId"`
+	pc                 *webrtc.PeerConnection
 	mu                 sync.Mutex
 	remoteSet          bool
 	remoteTracks       map[string]SessionTrack
@@ -73,8 +82,12 @@ type session struct {
 	emitFn             func(event string, data ...any)
 	offerWaitChan      chan bool
 	selfTracksMetadata map[string]SessionTrackMetadata
-	Username           string `json:"userName"`
-	currentViewPage    int
+
+	// data state
+	Username        string `json:"userName"`
+	currentViewPage int
+
+	sessionState SessionState
 }
 
 func NewSession(pc *webrtc.PeerConnection, clientID string, userName string) Session {
@@ -91,6 +104,18 @@ func NewSession(pc *webrtc.PeerConnection, clientID string, userName string) Ses
 		selfTracksMetadata: make(map[string]SessionTrackMetadata),
 		currentViewPage:    1,
 	}
+}
+
+func (s *session) GetCurrentState() SessionState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sessionState
+}
+
+func (s *session) SetCurrentState(state SessionState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessionState = state
 }
 
 func (s *session) GetCurrentViewPage() int {

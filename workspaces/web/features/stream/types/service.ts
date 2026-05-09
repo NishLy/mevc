@@ -76,3 +76,12 @@ export type RoomState = {
   current_total_participants: number
   current_total_grouped_streams: number
 }
+
+export interface ParticipantData {
+  clientId: string
+  username: string
+  role: string
+  isMuted: boolean
+  isVideoOff: boolean
+  isRaisedHand: boolean
+}

@@ -353,3 +353,14 @@ func HandlePageChangeRequest(conn ws.WebSocketConnection, data ...any) {
 
 	session.SetCurrrentViewPage(pageInt)
 }
+
+func HandleParticipantDataRequest(conn ws.WebSocketConnection, data ...any) {
+	sessionManager := GetGroupManagerFromConn(conn)
+	if sessionManager == nil {
+		return
+	}
+
+	participantsData := sessionManager.GetParticipantsData()
+
+	conn.Emit("participants_data_response", participantsData)
+}
