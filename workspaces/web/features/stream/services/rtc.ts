@@ -5,6 +5,8 @@ import {
   MediaCombinedStream,
   ParticipantData,
   PendingEntry,
+  ReactionData,
+  ReactionRequestData,
   RoomState,
   TrackMeta,
 } from "../types/service"
@@ -17,6 +19,7 @@ interface WebRTCServiceProps {
   onPeerStatusChanged?: (status: string) => void
   onRoomStateChanged?: (state: RoomState) => void
   onParticipantDataChanged?: (participants: ParticipantData[]) => void
+  onReactionReceived?: (reaction: ReactionData) => void
 }
 
 export class WebRTCService {
@@ -51,6 +54,7 @@ export class WebRTCService {
     onRemovedRemoteStream: () => {},
     onPeerStatusChanged: (status: string) => {},
     onRoomStateChanged: (state: RoomState) => {},
+    onReactionReceived: (reaction: ReactionData) => {},
   }
 
   constructor(
@@ -584,10 +588,25 @@ export class WebRTCService {
         this.options.onParticipantDataChanged?.(participants)
       }
     )
+
+    this.wsService?.on(
+      "reaction_received",
+      (_: string, reaction: ReactionData) => {
+        this.options.onReactionReceived?.(reaction)
+      }
+    )
   }
 
   requestPageChange(page: number) {
     this.emit("page_change_request", page)
+  }
+
+  requestReaction(type: "unicode" | "assets", value: string) {
+    this.emit("reaction_sent", { type, value } as ReactionRequestData)
+  }
+
+  onReactionReceived(callback: (reaction: ReactionData) => void) {
+    this.options.onReactionReceived = callback
   }
 
   destroy() {
@@ -603,6 +622,7 @@ export class WebRTCService {
     this.wsService?.off("track_changed")
     this.wsService?.off("peer_left")
     this.wsService?.off("page_change_request")
+    this.wsService?.off("reaction_received")
     this.wsService = null
   }
 }

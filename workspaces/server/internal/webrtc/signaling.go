@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/ws"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
@@ -363,4 +364,27 @@ func HandleParticipantDataRequest(conn ws.WebSocketConnection, data ...any) {
 	participantsData := sessionManager.GetParticipantsData()
 
 	conn.Emit("participants_data_response", participantsData)
+}
+
+func HandleReaction(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
+	sessionManager := GetGroupManagerFromConn(conn)
+	if sessionManager == nil {
+		return
+	}
+
+	session, exists := sessionManager.GetSessionByWsID(conn.ID())
+	if !exists {
+		return
+	}
+
+	reactionData := data[1].(map[string]interface{})
+	if reactionData == nil {
+		return
+	}
+
+	reactionData["clientId"] = session.GetClientId()
+	reactionData["username"] = session.GetUsername()
+	reactionData["timestamp"] = time.Now().Unix()
+
+	hub.EmitTo(sessionManager.GetGroupId(), "reaction_received", nil, session.GetClientId(), reactionData)
 }

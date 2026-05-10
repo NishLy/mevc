@@ -85,3 +85,19 @@ export interface ParticipantData {
   isVideoOff: boolean
   isRaisedHand: boolean
 }
+
+export interface ReactionData {
+  type: "unicode" | "assets"
+  clientId: string
+  username: string
+  value: string
+}
+
+// export interface ReactionManager {
+//   sendReaction: (reaction: ReactionRequestData) => void
+// }
+
+export interface ReactionRequestData {
+  type: "unicode" | "assets"
+  value: string
+}

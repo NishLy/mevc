@@ -50,6 +50,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { MenuItemDef } from "../types/ui"
 
+const REACTIONS = ["👍", "👏", "❤️", "😂", "😮", "🎉", "🙌", "🤔"]
+
 function useTimer() {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
@@ -143,6 +145,7 @@ export default function ControlBar() {
   const controller = useMeet((state) => state.controller)
   const localController = useMeet((state) => state.controllerState)
   const roomState = useMeet((state) => state.roomState)
+  const rtcService = useMeet((state) => state.RTCService)
 
   const { isChatOpen, isParticipantsOpen, isSettingsOpen } = useMeet(
     (state) => state.uiControls
@@ -373,17 +376,18 @@ export default function ControlBar() {
             label="Reactions"
             tooltip="Send a reaction"
             caretContent={
-              <div className="flex flex-wrap gap-2 p-3">
-                {["👍", "👏", "❤️", "😂", "😮", "🎉", "🙌", "🤔"].map(
-                  (emoji) => (
-                    <button
-                      key={emoji}
-                      className="text-xl transition-transform hover:scale-125"
-                    >
-                      {emoji}
-                    </button>
-                  )
-                )}
+              <div className="flex flex-wrap justify-center gap-2 p-3">
+                {REACTIONS.map((emoji) => (
+                  <Button
+                    key={emoji}
+                    className="cursor-pointer rounded-md bg-white/10 p-2 text-xl text-white transition-transform hover:scale-125"
+                    onClick={() => {
+                      rtcService?.requestReaction("unicode", emoji)
+                    }}
+                  >
+                    {emoji}
+                  </Button>
+                ))}
               </div>
             }
           />

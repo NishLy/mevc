@@ -157,4 +157,9 @@ func RegisterHandlers(hub ws.WsHub) {
 
 	// This handler is for when the client requests the participant data, it will trigger a response with the current participant data of the session
 	hub.On("participant_data_request", HandleParticipantDataRequest)
+
+	// This handler is for when the client sends a reaction, it will trigger a response to all clients in the session with the reaction data
+	hub.On("reaction_sent", func(conn ws.WebSocketConnection, data ...any) {
+		HandleReaction(hub, conn, data...)
+	})
 }

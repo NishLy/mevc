@@ -12,6 +12,7 @@ import ChatTabs from "./chat"
 import JoiningVariant from "./loadings/join"
 import ReconnectingVariant from "./loadings/rejoin"
 import MeetClosedVariant from "./loadings/closed"
+import ReactionComponent from "./reaction"
 
 interface RoomProps {
   roomId: string
@@ -200,6 +201,7 @@ export default function Room({ roomId }: RoomProps) {
             <VideosGrid />
             <ChatTabs />
             <ControlBar />
+            <ReactionComponent />
           </>
         )}
       </div>
