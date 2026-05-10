@@ -645,6 +645,7 @@ export class WebRTCService {
   }
 
   destroy() {
+    this.emit("leave_room")
     this.peerConnection?.close()
     this.peerConnection = null
     this.pending.clear()
@@ -658,6 +659,8 @@ export class WebRTCService {
     this.wsService?.off("peer_left")
     this.wsService?.off("page_change_request")
     this.wsService?.off("reaction_received")
+    this.wsService?.off("participant_data_changed")
+    this.wsService?.close()
     this.wsService = null
   }
 }

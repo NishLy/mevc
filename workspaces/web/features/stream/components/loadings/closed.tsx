@@ -1,8 +1,47 @@
 import { motion } from "framer-motion"
 import { Badge } from "lucide-react"
+import useMeet from "../../state/meet"
+import { generateInitials } from "@/lib/strings"
+import { MeetConnectionState } from "../../types/service"
+import { Button } from "@/components/ui/button"
 
-const MeetClosedVariant = () => {
-  const participants = ["AK", "BL", "CR", "DM", "EV"]
+interface MeetClosedVariantProps {
+  status: MeetConnectionState
+}
+
+const TITLE_BY_STATUS: Record<MeetConnectionState, string> = {
+  [MeetConnectionState.Completed]: "This meeting has ended",
+  [MeetConnectionState.Unknown]: "This meeting is unavailable",
+  [MeetConnectionState.Closed]: "You have left the meeting",
+  [MeetConnectionState.New]: "",
+  [MeetConnectionState.Checking]: "",
+  [MeetConnectionState.Lobby]: "",
+  [MeetConnectionState.SessionCreated]: "",
+  [MeetConnectionState.Connected]: "",
+  [MeetConnectionState.Disconnected]: "",
+  [MeetConnectionState.Reconnecting]: "",
+}
+
+const DESCRIPTION_BY_STATUS: Record<MeetConnectionState, string> = {
+  [MeetConnectionState.Completed]:
+    "The host ended this meeting for all participants",
+  [MeetConnectionState.Unknown]:
+    "The meeting you are trying to join is unavailable",
+  [MeetConnectionState.Closed]: "You have left this meeting",
+  [MeetConnectionState.New]: "",
+  [MeetConnectionState.Checking]: "",
+  [MeetConnectionState.Lobby]: "",
+  [MeetConnectionState.SessionCreated]: "",
+  [MeetConnectionState.Connected]: "",
+  [MeetConnectionState.Disconnected]: "",
+  [MeetConnectionState.Reconnecting]: "",
+}
+
+const MeetClosedVariant = (props: MeetClosedVariantProps) => {
+  const partipants = useMeet((state) => state.participants)
+  const participantInitials = partipants
+    .slice(0, 5)
+    .map((p) => generateInitials(p.username))
 
   return (
     <div className="flex flex-col items-center justify-center gap-8 py-10">
@@ -52,7 +91,7 @@ const MeetClosedVariant = () => {
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          This meeting has ended
+          {TITLE_BY_STATUS[props.status]}
         </motion.h2>
         <motion.p
           className="max-w-[200px] text-sm text-zinc-500"
@@ -60,7 +99,7 @@ const MeetClosedVariant = () => {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2 }}
         >
-          The host closed this room for all participants
+          {DESCRIPTION_BY_STATUS[props.status]}
         </motion.p>
       </div>
 
@@ -78,7 +117,7 @@ const MeetClosedVariant = () => {
         <div className="flex items-center justify-between p-3.5">
           <span className="text-xs text-zinc-500">Participants</span>
           <div className="flex items-center gap-1">
-            {participants.map((p, i) => (
+            {participantInitials.map((p, i) => (
               <motion.div
                 key={p}
                 initial={{ opacity: 0, x: 4 }}
@@ -89,16 +128,25 @@ const MeetClosedVariant = () => {
                 {p}
               </motion.div>
             ))}
-            <span className="ml-1.5 text-xs text-zinc-500">+2</span>
+            {participantInitials.length > 5 && (
+              <motion.div
+                initial={{ opacity: 0, x: 4 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.4 + 5 * 0.06 }}
+                className="-ml-1 flex h-6 w-6 items-center justify-center rounded-full border border-zinc-900 bg-zinc-700 text-[9px] font-medium text-zinc-300"
+              >
+                +{participantInitials.length - 5}
+              </motion.div>
+            )}
           </div>
         </div>
-        <div className="flex items-center justify-between p-3.5">
+        {/* <div className="flex items-center justify-between p-3.5">
           <span className="text-xs text-zinc-500">Recording</span>
           <Badge color="green">
             <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
             Saved
           </Badge>
-        </div>
+        </div> */}
       </motion.div>
 
       {/* CTA */}
@@ -108,12 +156,12 @@ const MeetClosedVariant = () => {
         animate={{ opacity: 1 }}
         transition={{ delay: 0.7 }}
       >
-        <button className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500">
+        {/* <button className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500">
           Schedule a follow-up
-        </button>
-        <button className="text-xs text-zinc-500 transition-colors hover:text-zinc-300">
+        </button> */}
+        <Button className="cursor-pointer text-xs text-zinc-500 transition-colors hover:text-zinc-300">
           Return to dashboard
-        </button>
+        </Button>
       </motion.div>
     </div>
   )

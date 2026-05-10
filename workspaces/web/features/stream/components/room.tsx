@@ -40,11 +40,13 @@ const RenderLoading = (status: MeetConnectionState) => {
   }
 
   if (
-    [MeetConnectionState.Completed, MeetConnectionState.Unknown].includes(
-      status
-    )
+    [
+      MeetConnectionState.Completed,
+      MeetConnectionState.Unknown,
+      MeetConnectionState.Closed,
+    ].includes(status)
   ) {
-    return <MeetClosedVariant />
+    return <MeetClosedVariant status={status} />
   }
 
   return null

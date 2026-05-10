@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { use, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -49,6 +49,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { MenuItemDef } from "../types/ui"
+import { MeetConnectionState } from "../types/service"
 
 const REACTIONS = ["👍", "👏", "❤️", "😂", "😮", "🎉", "🙌", "🤔"]
 
@@ -431,7 +432,13 @@ export default function ControlBar() {
           <div className="mx-2 h-8 w-px bg-white/10" />
 
           {/* End Call */}
-          <Button className="h-11 gap-2 rounded-xl bg-red-500 px-5 text-sm font-semibold text-white transition-colors hover:bg-red-600 active:bg-red-700">
+          <Button
+            className="h-11 cursor-pointer gap-2 rounded-xl bg-red-500 px-5 text-sm font-semibold text-white transition-colors hover:bg-red-600 active:bg-red-700"
+            onClick={() => {
+              rtcService?.destroy()
+              useMeet.setState({ status: MeetConnectionState.Closed })
+            }}
+          >
             <Phone className="h-4 w-4 rotate-135" />
             End
           </Button>

@@ -63,6 +63,7 @@ export enum MeetConnectionState {
   Completed = "completed",
   Disconnected = "disconnected",
   Unknown = "unknown",
+  Closed = "closed",
   Reconnecting = "reconnecting",
 }
 

@@ -79,12 +79,6 @@ func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 }
 
 func HandleLeaveRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
-	if hub.GetRoom(conn) == nil {
-		return
-	}
-
-	hub.Leave(*hub.GetRoom(conn), conn)
-
 	sessionManager := GetGroupManagerFromConn(conn)
 	if sessionManager == nil {
 		return
@@ -99,6 +93,8 @@ func HandleLeaveRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	sessionManager.RemoveFromSessionManager(session.GetClientId())
 
 	hub.EmitTo(sessionManager.GetGroupId(), "peer_left", nil, session.GetClientId())
+
+	hub.Leave(*hub.GetRoom(conn), conn)
 }
 
 func HandleOffer(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
