@@ -376,7 +376,7 @@ export default function ControlBar() {
             label="Reactions"
             tooltip="Send a reaction"
             caretContent={
-              <div className="flex flex-wrap justify-center gap-2 p-3">
+              <div className="flex flex-wrap justify-around gap-2 p-3">
                 {REACTIONS.map((emoji) => (
                   <Button
                     key={emoji}
@@ -388,6 +388,12 @@ export default function ControlBar() {
                     {emoji}
                   </Button>
                 ))}
+                <Button
+                  className="w-full cursor-pointer rounded-md bg-white/10 p-2 text-white transition-transform hover:scale-125"
+                  onClick={() => rtcService?.requestReaction("unicode", "✋")}
+                >
+                  ✋ Raise Hand
+                </Button>
               </div>
             }
           />

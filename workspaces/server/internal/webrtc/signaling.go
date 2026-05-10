@@ -386,5 +386,22 @@ func HandleReaction(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	reactionData["username"] = session.GetUsername()
 	reactionData["timestamp"] = time.Now().Unix()
 
+	if reactionData["type"] == "unicode" && reactionData["value"] == "✋" {
+		logger.Sugar.Infof("Client %s raised hand", session.GetClientId())
+
+		currentState := session.GetCurrentState()
+
+		if currentState.IsRaisedHand {
+			currentState.IsRaisedHand = false
+		} else {
+			currentState.IsRaisedHand = true
+		}
+
+		session.SetCurrentState(currentState)
+		participants := sessionManager.GetParticipantsData()
+
+		hub.EmitTo(sessionManager.GetGroupId(), "participants_data_response", nil, participants)
+	}
+
 	hub.EmitTo(sessionManager.GetGroupId(), "reaction_received", nil, session.GetClientId(), reactionData)
 }
