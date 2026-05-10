@@ -2,7 +2,7 @@
 
 import ControlBar from "@/features/stream/components/control_bar"
 import VideosGrid from "@/features/stream/components/video_grid"
-import { useEffect } from "react"
+import { use, useEffect } from "react"
 import { MediaStreamController } from "../services/local"
 import useMeet from "../state/meet"
 import { WebRTCService } from "../services/rtc"
@@ -68,9 +68,6 @@ export default function Room({ roomId }: RoomProps) {
     removeRemoteStream,
     setRoomState,
   } = useMeet()
-
-  console.log("Room component props:", { roomId, userName, clientId })
-  console.log("Room component rendered with status:", status, localStreams)
 
   useEffect(() => {
     if (!roomId || !clientId || !userName) return
@@ -165,6 +162,19 @@ export default function Room({ roomId }: RoomProps) {
         },
         onParticipantDataChanged: (participants) => {
           useMeet.setState({ participants: participants })
+        },
+        onChatMessageReceived: (message) => {
+          useMeet.setState((state) => ({
+            chatMessages: [...state.chatMessages, message],
+          }))
+        },
+        onChatHistoryReceived(messages) {
+          if (!messages) return useMeet.setState({ isChatAllFetched: true })
+
+          useMeet.setState((state) => ({
+            // Prepend the new messages to the existing chatMessages
+            chatMessages: [...messages, ...state.chatMessages],
+          }))
         },
       }
     )

@@ -1,5 +1,6 @@
 import WSservice from "@/lib/ws"
 import {
+  ChatMessage,
   LOCAL_STREAM_TYPE,
   LocalStreamsTuple,
   MediaCombinedStream,
@@ -12,6 +13,7 @@ import {
 } from "../types/service"
 import { createBlackVideoTrack } from "./local"
 import { metadata, th, track } from "framer-motion/m"
+import page from "@/app/room/page"
 
 interface WebRTCServiceProps {
   onAddedRemoteStream?: (stream: MediaCombinedStream) => void
@@ -19,6 +21,8 @@ interface WebRTCServiceProps {
   onPeerStatusChanged?: (status: string) => void
   onRoomStateChanged?: (state: RoomState) => void
   onParticipantDataChanged?: (participants: ParticipantData[]) => void
+  onChatMessageReceived?: (message: ChatMessage) => void
+  onChatHistoryReceived?: (messages: ChatMessage[] | null) => void
   onReactionReceived?: (reaction: ReactionData) => void
 }
 
@@ -589,6 +593,21 @@ export class WebRTCService {
       }
     )
 
+    this.wsService?.on("chat_message_sent", (message: ChatMessage) => {
+      this.options.onChatMessageReceived?.(message)
+    })
+
+    this.wsService?.on("chat_history", (messages: ChatMessage[]) => {
+      this.options.onChatHistoryReceived?.(messages)
+    })
+
+    this.wsService?.on(
+      "chat_history_response",
+      (messages: ChatMessage[] | null) => {
+        this.options.onChatHistoryReceived?.(messages)
+      }
+    )
+
     this.wsService?.on(
       "reaction_received",
       (_: string, reaction: ReactionData) => {
@@ -599,6 +618,14 @@ export class WebRTCService {
 
   requestPageChange(page: number) {
     this.emit("page_change_request", page)
+  }
+
+  sendChatMessage(content: string) {
+    this.emit("chat_message_sent", content)
+  }
+
+  requestChatHistory(skip: number) {
+    this.emit("chat_history_request", skip)
   }
 
   requestReaction(type: "unicode" | "assets", value: string) {

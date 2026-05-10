@@ -2,6 +2,7 @@
 
 import { create } from "zustand/react"
 import {
+  ChatMessage,
   IUser,
   LocalStreamsTuple,
   MediaCombinedStream,
@@ -58,6 +59,8 @@ interface MeetState {
   lobbyParticipants: IUser[]
   roomState: RoomState
   participants: ParticipantData[]
+  chatMessages: ChatMessage[]
+  isChatAllFetched: boolean
   pagination: VideoPagination
   setRoomState: (state: RoomState) => void
   addRemoteStream: (stream: MediaCombinedStream) => void
@@ -105,6 +108,8 @@ const useMeet = create<MeetState>((set, state) => ({
     current_total_grouped_streams: 1,
   },
   participants: [],
+  chatMessages: [],
+  isChatAllFetched: false,
   pagination: {
     currentPage: 1,
     totalPages: 1,

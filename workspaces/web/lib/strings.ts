@@ -6,3 +6,11 @@ export const generateInitials = (name: string, maxInitials = 2) => {
     .join("")
   return initials || "?"
 }
+
+export const truncateString = (text: string, limit: number): string => {
+  const chars = Array.from(text)
+
+  if (chars.length <= limit) return text
+
+  return chars.slice(0, limit).join("") + "..."
+}

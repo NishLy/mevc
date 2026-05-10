@@ -86,6 +86,14 @@ export interface ParticipantData {
   isRaisedHand: boolean
 }
 
+export interface ChatMessage {
+  senderId: string
+  senderName: string
+  timestamp: number
+  type: "text" | "system"
+  message: string
+}
+
 export interface ReactionData {
   type: "unicode" | "assets"
   clientId: string

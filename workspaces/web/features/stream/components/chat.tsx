@@ -1,96 +1,19 @@
 import { Button } from "@/components/ui/button"
-import { useEffect, useRef, useState } from "react"
+import { use, useEffect, useRef, useState } from "react"
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 
-import {
-  Mic,
-  MicOff,
-  Video,
-  VideoOff,
-  Monitor,
-  Users,
-  PhoneOff,
-  MessageSquare,
-  Send,
-} from "lucide-react"
+import { Mic, MicOff, Users, MessageSquare, Send } from "lucide-react"
 import useMeet from "../state/meet"
-import classNames from "classnames"
-import { generateInitials } from "@/lib/strings"
+import { generateInitials, truncateString } from "@/lib/strings"
 import ColorGen from "@/lib/color"
-import { ParticipantData } from "../types/service"
-import { Dialog } from "radix-ui"
+import { ChatMessage, ParticipantData } from "../types/service"
 import { AnimatePresence, motion } from "framer-motion"
 import { useOnClickOutside } from "@/hooks/touch"
-
-const DUMMY_MESSAGES = [
-  { id: 1, type: "system", text: "Meeting started · 23:20" },
-  {
-    id: 2,
-    type: "message",
-    from: "Alex Johnson",
-    colorClass: "text-blue-400",
-    time: "23:21",
-    text: "Hey everyone, can you all hear me okay?",
-    self: false,
-  },
-  {
-    id: 3,
-    type: "message",
-    from: "Sarah R.",
-    colorClass: "text-amber-400",
-    time: "23:21",
-    text: "Yep, loud and clear! 👍",
-    self: false,
-  },
-  {
-    id: 4,
-    type: "message",
-    from: "Mike K.",
-    colorClass: "text-zinc-400",
-    time: "23:22",
-    text: "Same here. Starting screen share now.",
-    self: false,
-  },
-  { id: 5, type: "system", text: "Mike K. started screen sharing" },
-  {
-    id: 6,
-    type: "message",
-    from: "Alex Johnson",
-    colorClass: "text-blue-400",
-    time: "23:25",
-    text: "Client 1 has different track IDs between signaling and OnTrack — checking SDP renegotiation",
-    self: false,
-  },
-  {
-    id: 7,
-    type: "message",
-    from: "You",
-    colorClass: "text-emerald-400",
-    time: "23:26",
-    text: "Client 1 triggered a second offer before the first was acked. I'll debounce negotiationneeded.",
-    self: true,
-  },
-  {
-    id: 8,
-    type: "message",
-    from: "Sarah R.",
-    colorClass: "text-amber-400",
-    time: "23:26",
-    text: "Makes sense. Stream group 12 is the camera track, not screen share.",
-    self: false,
-  },
-]
 
 function ParticipantRow({
   participant,
@@ -121,50 +44,85 @@ function ParticipantRow({
   )
 }
 
-function ChatMessage({ msg }: { msg: (typeof DUMMY_MESSAGES)[number] }) {
+import React from "react"
+
+export const renderMessageWithLinks = (text: string) => {
+  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi
+
+  const parts = text.split(urlRegex)
+
+  return parts.map((part, index) => {
+    // If the part is undefined (can happen with split), skip it
+    if (!part) return null
+
+    // Check if the current part is a URL
+    if (part.match(urlRegex)) {
+      const href = part.startsWith("www.") ? `https://${part}` : part
+
+      return (
+        <a
+          key={index}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="break-all text-blue-300 hover:underline"
+        >
+          {part}
+        </a>
+      )
+    }
+
+    // Otherwise, return the plain text
+    return <span key={index}>{part}</span>
+  })
+}
+
+function ChatRow({ msg }: { msg: ChatMessage }) {
   if (msg.type === "system") {
     return (
       <div className="py-0.5 text-center text-[11px] text-zinc-500">
-        {msg.text}
+        {msg.message}
       </div>
     )
   }
 
   return (
     <div
-      className={`flex flex-col gap-0.5 ${msg.self ? "items-end" : "items-start"}`}
+      className={`flex flex-col gap-0.5 ${msg.senderId === "you" ? "items-end" : "items-start"}`}
     >
       <div
-        className={`flex items-baseline gap-1.5 ${msg.self ? "flex-row-reverse" : ""}`}
+        className={`flex items-baseline gap-1.5 ${msg.senderId === "you" ? "flex-row-reverse" : ""}`}
       >
-        <span className={`text-[11px] font-medium ${msg.colorClass}`}>
-          {msg.from}
+        <span className={`text-[11px] font-medium`}>{msg.senderName}</span>
+        <span className="text-[10px] text-zinc-400">
+          {new Date(msg.timestamp).toLocaleTimeString()}
         </span>
-        <span className="text-[10px] text-zinc-600">{msg.time}</span>
       </div>
       <div
-        className={`max-w-[90%] px-2.5 py-1.5 text-[12.5px] leading-relaxed break-words ${
-          msg.self
+        className={`max-w-[90%] px-2.5 py-1.5 text-[12.5px] leading-relaxed whitespace-pre-wrap ${
+          msg.senderId === "you"
             ? "rounded-lg rounded-tr-none bg-blue-900/60 text-zinc-100"
             : "rounded-lg rounded-tl-none bg-zinc-700/60 text-zinc-200"
         }`}
       >
-        {msg.text}
+        {renderMessageWithLinks(msg.message)}
       </div>
     </div>
   )
 }
 
 const ChatTabs = () => {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
-  const [messages, setMessages] = useState(DUMMY_MESSAGES)
+  const messages = useMeet((state) => state.chatMessages)
   const [input, setInput] = useState("")
   const { isChatOpen, isParticipantsOpen } = useMeet(
     (state) => state.uiControls
   )
   const containerRef = useRef<HTMLDivElement | null>(null)
-
   const participants = useMeet((state) => state.participants)
+  const rtcService = useMeet((state) => state.RTCService)
+  const isAllFetched = useMeet((state) => state.isChatAllFetched)
 
   const closeAll = () => {
     useMeet.setState((state) => ({
@@ -185,28 +143,29 @@ const ChatTabs = () => {
     color: ColorGen.next(),
   }))
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
-
   function sendMessage() {
-    const text = input.trim()
+    const text = truncateString(input.trim(), 1000)
     if (!text) return
-    const now = new Date()
-    const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        type: "message",
-        from: "You",
-        colorClass: "text-emerald-400",
-        time,
-        text,
-        self: true,
-      },
-    ])
+
+    rtcService?.sendChatMessage(text)
     setInput("")
+
+    const message: ChatMessage = {
+      senderId: "you",
+      senderName: "You",
+      timestamp: Date.now(),
+      type: "text",
+      message: text,
+    }
+
+    useMeet.setState((state) => ({
+      chatMessages: [...state.chatMessages, message],
+    }))
+
+    bottomRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    })
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -215,6 +174,41 @@ const ChatTabs = () => {
       sendMessage()
     }
   }
+
+  const historySentinelRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!scrollContainerRef.current || isAllFetched) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && rtcService) {
+          rtcService.requestChatHistory(messages.length)
+        }
+      },
+      {
+        root: scrollContainerRef.current,
+        rootMargin: "100px 0px 0px 0px",
+        threshold: 0,
+        scrollMargin: "100px",
+      }
+    )
+
+    if (historySentinelRef.current) {
+      observer.observe(historySentinelRef.current)
+    }
+
+    return () => observer.disconnect()
+  }, [isAllFetched, messages.length, rtcService, scrollContainerRef])
+
+  useEffect(() => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      })
+    }
+  }, [bottomRef])
 
   return (
     <AnimatePresence>
@@ -292,18 +286,46 @@ const ChatTabs = () => {
                 value="chat"
                 className="mt- flex h-full min-h-0 flex-1 flex-col"
               >
-                <div className="flex-1 overflow-y-auto px-3 py-2">
-                  <div className="flex flex-col gap-3">
-                    {messages.map((msg) => (
-                      <ChatMessage key={msg.id} msg={msg} />
+                <AnimatePresence initial={false}>
+                  <div
+                    className="flex-1 overflow-y-auto px-3 py-2"
+                    ref={scrollContainerRef}
+                  >
+                    {/* 1. TOP: Observe this to load OLDER history */}
+                    <div ref={historySentinelRef} className="h-4 w-full">
+                      {isAllFetched ? (
+                        <p className="text-center text-[11px] text-zinc-500">
+                          No more messages
+                        </p>
+                      ) : (
+                        <p className="text-center text-[11px] text-zinc-400">
+                          Loading history...
+                        </p>
+                      )}
+                    </div>
+
+                    {messages.map((msg, i) => (
+                      <motion.div
+                        key={i + msg.timestamp}
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{
+                          type: "spring",
+                          stiffness: 260,
+                          damping: 20,
+                        }}
+                        className="mb-1"
+                      >
+                        <ChatRow msg={msg} />
+                      </motion.div>
                     ))}
-                    <div ref={bottomRef} />
+
+                    <div ref={bottomRef}></div>
                   </div>
-                </div>
+                </AnimatePresence>
 
-                <Separator className="mt-4 bg-zinc-700/50" />
-
-                <div className="flex items-end gap-2 p-2">
+                <div className="flex items-center gap-2 p-2 pb-4">
                   <Textarea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
@@ -311,12 +333,13 @@ const ChatTabs = () => {
                     placeholder="Message everyone..."
                     className="max-h-20 min-h-9 flex-1 resize-none rounded-2xl border-zinc-600/50 bg-zinc-700/50 px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-blue-500"
                     rows={1}
+                    maxLength={1000}
                   />
                   <Button
                     size="icon"
                     onClick={sendMessage}
                     disabled={!input.trim()}
-                    className="h-8 w-8 shrink-0 rounded-full bg-blue-600 hover:bg-blue-500 disabled:opacity-30"
+                    className="h-full w-12 shrink-0 rounded-2xl focus-visible:ring-blue-500 disabled:opacity-30"
                   >
                     <Send className="h-3.5 w-3.5" />
                   </Button>
