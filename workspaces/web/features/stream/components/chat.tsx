@@ -234,7 +234,7 @@ const ChatTabs = () => {
             animate={{ x: 0 }} // Slide in
             exit={{ x: "100%" }} // Slide out
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="fixed top-0 right-0 bottom-0 z-50 flex h-screen w-64 flex-col border-l border-zinc-700/50 bg-[#1a1a28]/95 xl:w-xl"
+            className="fixed top-0 right-0 bottom-0 z-50 flex h-screen w-md flex-col border-l border-zinc-700/50 bg-[#1a1a28]/95 xl:w-xl"
           >
             <Tabs
               defaultValue="chat"
