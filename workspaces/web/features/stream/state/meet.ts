@@ -24,6 +24,7 @@ const dummyUsername =
 interface VideoPagination {
   currentPage: number
   totalPages: number
+  maxiumPerPage: number
   visibleStreams: (MediaCombinedStream | null)[]
 }
 
@@ -106,14 +107,17 @@ const useMeet = create<MeetState>((set, state) => ({
   participants: [],
   pagination: {
     currentPage: 1,
-    totalPages: 9,
+    totalPages: 1,
+    maxiumPerPage: 10,
     visibleStreams: [],
   },
   setRoomState: (roomState) => {
+    const maxiumPerPage = roomState.maxium_per_page
+
     const totalPages = Math.ceil(
       (roomState.current_total_grouped_streams -
         state().localStreams.filter((s) => !!s).length) /
-        roomState.maxium_per_page
+        maxiumPerPage
     )
 
     set((state) => ({
@@ -121,6 +125,7 @@ const useMeet = create<MeetState>((set, state) => ({
       pagination: {
         ...state.pagination,
         totalPages,
+        maxiumPerPage,
       },
     }))
   },
@@ -128,13 +133,16 @@ const useMeet = create<MeetState>((set, state) => ({
     const newRemoteStreams = state().remoteStreams.filter(
       (s) => s.id !== streamId
     )
+
+    const maxiumPerPage = state().pagination.maxiumPerPage
+
     const totalPages = Math.ceil(
       (state().roomState.current_total_grouped_streams -
         state().localStreams.filter((s) => !!s).length) /
-        state().roomState.maxium_per_page
+        maxiumPerPage
     )
     const villedStreams: (MediaCombinedStream | null)[] = Array.from(
-      { length: state().roomState.maxium_per_page },
+      { length: maxiumPerPage },
       (_, i) => newRemoteStreams[i] || null
     )
 
@@ -153,14 +161,16 @@ const useMeet = create<MeetState>((set, state) => ({
       stream,
     ]
 
+    const maxiumPerPage = state().pagination.maxiumPerPage
+
     const totalPages = Math.ceil(
       (state().roomState.current_total_grouped_streams -
         state().localStreams.filter((s) => !!s).length) /
-        state().roomState.maxium_per_page
+        maxiumPerPage
     )
 
     const villedStreams: (MediaCombinedStream | null)[] = Array.from(
-      { length: state().roomState.maxium_per_page },
+      { length: maxiumPerPage },
       (_, i) => newRemoteStreams[i] || null
     )
 

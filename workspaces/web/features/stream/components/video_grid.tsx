@@ -10,7 +10,7 @@ import { AnimatePresence, motion } from "framer-motion"
 import PersistentPiP from "@/components/pip"
 
 const calculateGridColumns = (count: number) => {
-  if (count === 1)
+  if (count === 1 || count === 0)
     return "grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:max-w-9/12"
   if (count === 2)
     return "grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:max-w-10/12"
@@ -29,7 +29,7 @@ const calculateGridColumns = (count: number) => {
 export default function VideosGrid() {
   const rtcService = useMeet((state) => state.RTCService)
   const localStreams = useMeet((state) => state.localStreams)
-  const { currentPage, totalPages, visibleStreams } = useMeet(
+  const { currentPage, totalPages, visibleStreams, maxiumPerPage } = useMeet(
     (state) => state.pagination
   )
 
@@ -46,7 +46,9 @@ export default function VideosGrid() {
   )
 
   const unpinnedClas = useDeferredValue(
-    calculateGridColumns(unpinnedStreams.length)
+    calculateGridColumns(
+      totalPages > 1 ? maxiumPerPage : unpinnedStreams.length
+    )
   )
 
   return (
@@ -66,13 +68,19 @@ export default function VideosGrid() {
         <AnimatePresence mode="popLayout">
           {localStreams
             .filter((s) => !!s)
-            .map((s) => (
-              <PersistentPiP key={s.id} className="z-40 aspect-video">
-                <div className="h-full w-full">
+            .map((s) =>
+              unpinnedStreams.length > 0 ? (
+                <PersistentPiP key={s.id} className="z-40 aspect-video">
+                  <div className="h-full w-full">
+                    <VideoTile props={s} />
+                  </div>
+                </PersistentPiP>
+              ) : (
+                <div className="h-full w-full" key={s.id}>
                   <VideoTile props={s} />
                 </div>
-              </PersistentPiP>
-            ))}
+              )
+            )}
 
           {visibleStreams.map((s, index) => (
             <motion.div
