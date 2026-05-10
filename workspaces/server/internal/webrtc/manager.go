@@ -7,7 +7,7 @@ import (
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 )
 
-var MAX_STREAMS_PER_PAGE = 4
+var MAX_STREAMS_PER_PAGE = 2
 
 type PaginationOrdering struct {
 	index  int

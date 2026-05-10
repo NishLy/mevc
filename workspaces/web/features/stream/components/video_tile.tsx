@@ -78,43 +78,83 @@ const LOCAL_MENU: MenuItemDef[] = [
   { icon: <VolumeX className="h-3.5 w-3.5" />, label: "Mute original audio" },
 ]
 
-function VideoTile(props: MediaCombinedStream) {
+const VideoStream = ({
+  stream,
+  isMuted,
+  id,
+}: {
+  id: string | undefined
+  stream: MediaStream | undefined
+  isMuted: boolean | undefined
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream || null
+    }
+  }, [stream])
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = isMuted ?? false
+    }
+  }, [isMuted])
+
+  useEffect(() => {
+    if (videoRef.current && id) {
+      videoRef.current.id = id || ""
+    }
+  }, [id])
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      controls={false}
+      poster="/images/spinner.gif"
+      className="h-full w-full object-contain"
+    />
+  )
+}
+
+function VideoTile({ props }: { props: MediaCombinedStream | null }) {
   const [hovered, setHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
 
-  const userName = useMemo(() => {
-    if (props.isLocal) return "You"
-    return (
-      props.metadata?.video?.username ||
-      props.metadata?.audio?.username ||
-      "Participant"
+  const participants = useMeet((state) => state.participants)
+
+  const metadata = useMemo(() => {
+    if (!props) return null
+
+    const participant = participants.find(
+      (p) =>
+        p.clientId ===
+        (props.metadata.video?.clientId || props.metadata.audio?.clientId)
     )
-  }, [props.metadata, props.isLocal])
 
-  useEffect(() => {
-    if (videoRef.current && props.stream) {
-      videoRef.current.srcObject = props.stream
-    }
-  }, [props.stream, props.id, props.isVideoEnabled])
+    return participant
+  }, [participants, props])
 
-  const menuItems = props.isLocal ? LOCAL_MENU : REMOTE_MENU
-  const dangerItems = props.isLocal ? [] : REMOTE_MENU_DANGER
+  const menuItems = props?.isLocal ? LOCAL_MENU : REMOTE_MENU
+  const dangerItems = props?.isLocal ? [] : REMOTE_MENU_DANGER
   const showOverlay = hovered || menuOpen
 
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   const pinnedStreamIds = useMeet((state) => state.pinnedStreamIds)
-  const isPinned = pinnedStreamIds.includes(props.id)
+  const isPinned = pinnedStreamIds.includes(props?.id ?? "")
 
   const togglePin = () => {
+    if (!props) return
     if (isPinned) {
       useMeet.setState({
-        pinnedStreamIds: pinnedStreamIds.filter((id) => id !== props.id),
+        pinnedStreamIds: pinnedStreamIds.filter((id) => id !== props?.id),
       })
     } else {
       useMeet.setState({
-        pinnedStreamIds: [...pinnedStreamIds, props.id],
+        pinnedStreamIds: [...pinnedStreamIds, props?.id],
       })
     }
   }
@@ -164,30 +204,36 @@ function VideoTile(props: MediaCombinedStream) {
     <div
       className={classNames(
         "group relative box-border aspect-video shrink-0 overflow-hidden rounded-lg bg-zinc-700",
-        props.isLocal && "ring-1 ring-blue-400/50"
+        props?.isLocal && "ring-1 ring-blue-400/50"
       )}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {props.isVideoEnabled ? (
-        <video
-          ref={videoRef}
-          id={props.id}
-          autoPlay
-          playsInline
-          muted={props.isLocal}
-          controls={false}
-          // poster="https://img.favpng.com/10/24/2/computer-icons-user-icon-design-male-png-favpng-grqs7j1MENUsCah7VD6XBWVst.jpg"
-          poster="/images/spinner.gif"
-          className="h-full w-full object-contain"
+      {/* always render the video element to ensure the stream is properly attached, but hide it when video is disabled */}
+      <div
+        className={classNames(
+          props?.isVideoEnabled ? "block" : "hidden",
+          "h-full w-full"
+        )}
+      >
+        <VideoStream
+          id={props?.id}
+          stream={props?.stream}
+          isMuted={props?.isLocal}
         />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center bg-zinc-700">
+      </div>
+      {props && !props.isVideoEnabled && (
+        <div
+          className={classNames(
+            !props?.isVideoEnabled ? "flex" : "hidden",
+            "h-full w-full items-center justify-center bg-zinc-800/50"
+          )}
+        >
           <ParticpantIcon
             participant={{
-              id: props.id,
-              name: userName,
-              initials: userName.slice(0, 3).toUpperCase() || "UNK",
+              id: props?.id,
+              name: metadata?.username || "Unknown",
+              initials: metadata?.username?.slice(0, 3).toUpperCase() || "UNK",
               color: "#888",
               role: "Guest",
             }}
@@ -227,7 +273,9 @@ function VideoTile(props: MediaCombinedStream) {
         {/* Full screen shortcut */}
         <button
           className="flex h-7 w-7 items-center justify-center rounded-md bg-black/50 text-white/80 backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
-          onClick={() => toggleFullscreen(document.getElementById(props.id)!)}
+          onClick={() =>
+            props?.id && toggleFullscreen(document.getElementById(props.id)!)
+          }
           title={isFullscreen ? "Exit full screen" : "Full screen"}
         >
           {isFullscreen ? (
@@ -279,14 +327,14 @@ function VideoTile(props: MediaCombinedStream) {
 
       {/* local "You" badge — always visible */}
       <div className="absolute bottom-4 left-4 flex items-center gap-4">
-        {!props.isAudioEnabled && (
+        {!props?.isAudioEnabled && (
           <div className="rounded bg-red-500 p-2">
             <MicOffIcon className="h-3 w-3" />
           </div>
         )}
 
         <span className="rounded bg-violet-500 px-3 py-1 text-sm text-white">
-          {userName}
+          {metadata?.username || "Unknown"}
         </span>
       </div>
     </div>

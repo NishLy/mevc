@@ -21,6 +21,12 @@ const dummyUsername =
   searchParams.get("username") ||
   "User_" + Math.random().toString(36).substr(2, 5)
 
+interface VideoPagination {
+  currentPage: number
+  totalPages: number
+  visibleStreams: (MediaCombinedStream | null)[]
+}
+
 interface MeetState {
   clientId: string | null
   userName: string | null
@@ -50,8 +56,11 @@ interface MeetState {
   ws: WSservice | null
   lobbyParticipants: IUser[]
   roomState: RoomState
-  currentPage: number
   participants: ParticipantData[]
+  pagination: VideoPagination
+  setRoomState: (state: RoomState) => void
+  addRemoteStream: (stream: MediaCombinedStream) => void
+  removeRemoteStream: (streamId: string) => void
   setParticipantsInLobby: (participants: IUser[]) => void
   setRoomID: (roomId: string) => void
   setCurrentStatus: (status: MeetConnectionState) => void
@@ -61,7 +70,7 @@ interface MeetState {
   setPinnedStreamIds: (ids: string[]) => void
 }
 
-const useMeet = create<MeetState>((set) => ({
+const useMeet = create<MeetState>((set, state) => ({
   clientId: dummyClientId,
   userName: dummyUsername,
   roomId: null,
@@ -94,8 +103,76 @@ const useMeet = create<MeetState>((set) => ({
     current_total_participants: 1,
     current_total_grouped_streams: 1,
   },
-  currentPage: 1,
   participants: [],
+  pagination: {
+    currentPage: 1,
+    totalPages: 9,
+    visibleStreams: [],
+  },
+  setRoomState: (roomState) => {
+    const totalPages = Math.ceil(
+      (roomState.current_total_grouped_streams -
+        state().localStreams.filter((s) => !!s).length) /
+        roomState.maxium_per_page
+    )
+
+    set((state) => ({
+      roomState,
+      pagination: {
+        ...state.pagination,
+        totalPages,
+      },
+    }))
+  },
+  removeRemoteStream(streamId) {
+    const newRemoteStreams = state().remoteStreams.filter(
+      (s) => s.id !== streamId
+    )
+    const totalPages = Math.ceil(
+      (state().roomState.current_total_grouped_streams -
+        state().localStreams.filter((s) => !!s).length) /
+        state().roomState.maxium_per_page
+    )
+    const villedStreams: (MediaCombinedStream | null)[] = Array.from(
+      { length: state().roomState.maxium_per_page },
+      (_, i) => newRemoteStreams[i] || null
+    )
+
+    set((state) => ({
+      remoteStreams: newRemoteStreams,
+      pagination: {
+        ...state.pagination,
+        totalPages,
+        visibleStreams: villedStreams,
+      },
+    }))
+  },
+  addRemoteStream: (stream: MediaCombinedStream) => {
+    const newRemoteStreams = [
+      ...state().remoteStreams.filter((s) => s.id !== stream.id),
+      stream,
+    ]
+
+    const totalPages = Math.ceil(
+      (state().roomState.current_total_grouped_streams -
+        state().localStreams.filter((s) => !!s).length) /
+        state().roomState.maxium_per_page
+    )
+
+    const villedStreams: (MediaCombinedStream | null)[] = Array.from(
+      { length: state().roomState.maxium_per_page },
+      (_, i) => newRemoteStreams[i] || null
+    )
+
+    set((state) => ({
+      remoteStreams: newRemoteStreams,
+      pagination: {
+        ...state.pagination,
+        totalPages,
+        visibleStreams: villedStreams,
+      },
+    }))
+  },
   setParticipantsInLobby: (participants: IUser[]) =>
     set({ lobbyParticipants: participants }),
   setRoomID: (roomId) => set({ roomId }),

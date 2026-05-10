@@ -7,11 +7,7 @@ import { MediaStreamController } from "../services/local"
 import useMeet from "../state/meet"
 import { WebRTCService } from "../services/rtc"
 import WSservice from "@/lib/ws"
-import {
-  IUser,
-  MediaCombinedStream,
-  MeetConnectionState,
-} from "../types/service"
+import { IUser, MeetConnectionState } from "../types/service"
 import ChatTabs from "./chat"
 import JoiningVariant from "./loadings/join"
 import ReconnectingVariant from "./loadings/rejoin"
@@ -67,7 +63,9 @@ export default function Room({ roomId }: RoomProps) {
     setRoomID,
     setRTCService,
     setParticipantsInLobby,
-    currentPage,
+    addRemoteStream,
+    removeRemoteStream,
+    setRoomState,
   } = useMeet()
 
   console.log("Room component props:", { roomId, userName, clientId })
@@ -144,37 +142,10 @@ export default function Room({ roomId }: RoomProps) {
       localStreams,
       {
         onAddedRemoteStream: (streamItem) => {
-          const newRemoteStreams = [
-            ...useMeet.getState().remoteStreams,
-            streamItem,
-          ].reduce(
-            (acc, stream) => {
-              if (!stream.id) return acc
-
-              if (acc[stream.id]) {
-                acc[stream.id] = {
-                  ...(acc[stream.id] as MediaCombinedStream),
-                  stream: stream.stream,
-                  isVideoEnabled: stream.isVideoEnabled,
-                  isAudioEnabled: stream.isAudioEnabled,
-                  metadata: stream.metadata,
-                }
-              } else {
-                acc[stream.id] = stream
-              }
-
-              return acc
-            },
-            {} as Record<string, MediaCombinedStream>
-          )
-
-          useMeet.setState({ remoteStreams: Object.values(newRemoteStreams) })
+          addRemoteStream(streamItem)
         },
         onRemovedRemoteStream: (streamGroupId) => {
-          const newRemoteStreams = useMeet
-            .getState()
-            .remoteStreams.filter((s) => s.id !== streamGroupId)
-          useMeet.setState({ remoteStreams: newRemoteStreams })
+          removeRemoteStream(streamGroupId)
         },
         onPeerStatusChanged: (peerStatus) => {
           if (peerStatus === "disconnected" || peerStatus === "failed") {
@@ -189,7 +160,7 @@ export default function Room({ roomId }: RoomProps) {
           }
         },
         onRoomStateChanged: (roomState) => {
-          useMeet.setState({ roomState })
+          setRoomState(roomState)
         },
         onParticipantDataChanged: (participants) => {
           useMeet.setState({ participants: participants })
@@ -208,6 +179,9 @@ export default function Room({ roomId }: RoomProps) {
     status,
     clientId,
     userName,
+    addRemoteStream,
+    removeRemoteStream,
+    setRoomState,
   ])
 
   useEffect(() => {
@@ -215,12 +189,6 @@ export default function Room({ roomId }: RoomProps) {
 
     RTCService.setLocalStreams(localStreams)
   }, [localStreams, RTCService, status])
-
-  useEffect(() => {
-    if (status !== MeetConnectionState.Connected || !RTCService) return
-    RTCService.requestPageChange(currentPage)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage])
 
   return (
     <>

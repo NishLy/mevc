@@ -1,7 +1,7 @@
 "use client"
 
 import classNames from "classnames"
-import { useDeferredValue, useMemo } from "react"
+import { useDeferredValue } from "react"
 import VideoTile from "./video_tile"
 import useMeet from "../state/meet"
 import { Button } from "@/components/ui/button"
@@ -27,31 +27,24 @@ const calculateGridColumns = (count: number) => {
 }
 
 export default function VideosGrid() {
+  const rtcService = useMeet((state) => state.RTCService)
   const localStreams = useMeet((state) => state.localStreams)
-  const remoteStreams = useMeet((state) => state.remoteStreams)
-  const roomState = useMeet((state) => state.roomState)
-  const currentPage = useMeet((state) => state.currentPage)
-  const totalPages = Math.ceil(
-    roomState.current_total_grouped_streams / roomState.maxium_per_page
+  const { currentPage, totalPages, visibleStreams } = useMeet(
+    (state) => state.pagination
   )
 
   const pinnedStreams = useDeferredValue(
-    remoteStreams.filter((s) =>
-      useMeet.getState().pinnedStreamIds.includes(s.id)
+    visibleStreams.filter((s) =>
+      useMeet.getState().pinnedStreamIds.includes(s?.id ?? "")
     )
   )
+
   const unpinnedStreams = useDeferredValue(
-    remoteStreams.filter(
-      (s) => !useMeet.getState().pinnedStreamIds.includes(s.id)
+    visibleStreams.filter(
+      (s) => s && !useMeet.getState().pinnedStreamIds.includes(s?.id ?? "")
     )
   )
 
-  // const skeletonArray = Array.from({ length: roomState.maxium_per_page }, (_, i) => i)
-
-  // prevent layout shift when pinning/unpinning by keeping the grid structure consistent
-  const pinnedClas = useDeferredValue(
-    calculateGridColumns(pinnedStreams.length)
-  )
   const unpinnedClas = useDeferredValue(
     calculateGridColumns(unpinnedStreams.length)
   )
@@ -76,66 +69,48 @@ export default function VideosGrid() {
             .map((s) => (
               <PersistentPiP key={s.id} className="z-40 aspect-video">
                 <div className="h-full w-full">
-                  <VideoTile {...s} />
+                  <VideoTile props={s} />
                 </div>
               </PersistentPiP>
             ))}
 
-          {unpinnedStreams.map((s) => (
+          {visibleStreams.map((s, index) => (
             <motion.div
               layout // <--- This prevents the immediate snap/flicker of neighbors
-              key={s.id}
+              key={index}
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
               className={classNames(
                 pinnedStreams.length > 0
                   ? "relative z-30 h-40 w-70 shrink-0 opacity-70 hover:opacity-100"
-                  : "relative h-fit w-full"
+                  : "relative h-fit w-full",
+                !s && "hidden"
               )}
             >
-              <VideoTile {...s} />
+              <VideoTile props={s} />
             </motion.div>
           ))}
         </AnimatePresence>
       </div>
-
-      {/* Pinned Section */}
-      <AnimatePresence mode="popLayout">
-        {pinnedStreams.length > 0 && (
-          <motion.div
-            layout
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className={classNames(
-              "mx-auto grid h-[90vh] w-full items-center justify-items-center gap-4 overflow-hidden rounded-lg",
-              pinnedClas
-            )}
-          >
-            {pinnedStreams.map((s) => (
-              <motion.div
-                layout // <--- Makes pinned items slide smoothly when others are added/removed
-                key={s.id}
-                className="relative h-fit w-full"
-              >
-                <VideoTile {...s} />
-              </motion.div>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <div className="absolute bottom-26 flex w-fit items-center justify-center gap-4 rounded-2xl bg-white/20 px-4 py-2 text-sm text-white">
         <Button
           variant="outline"
           size="icon"
           disabled={currentPage === 1}
-          onClick={() =>
-            useMeet.setState((state) => ({
-              currentPage: state.currentPage - 1,
-            }))
-          }
+          onClick={() => {
+            if (currentPage > 1) {
+              const prevPage = currentPage - 1
+              rtcService?.requestPageChange(prevPage)
+              useMeet.setState((state) => ({
+                pagination: {
+                  ...state.pagination,
+                  currentPage: prevPage,
+                },
+              }))
+            }
+          }}
           className="cursor-pointer transition-all"
         >
           <ArrowLeftFromLine size="20" className="" />
@@ -147,11 +122,18 @@ export default function VideosGrid() {
           variant="outline"
           size="icon"
           disabled={currentPage === totalPages}
-          onClick={() =>
-            useMeet.setState((state) => ({
-              currentPage: state.currentPage + 1,
-            }))
-          }
+          onClick={() => {
+            if (currentPage < totalPages) {
+              const nextPage = currentPage + 1
+              rtcService?.requestPageChange(nextPage)
+              useMeet.setState((state) => ({
+                pagination: {
+                  ...state.pagination,
+                  currentPage: nextPage,
+                },
+              }))
+            }
+          }}
           className="cursor-pointer transition-all"
         >
           <ArrowLeftFromLine size="20" className="rotate-180" />
