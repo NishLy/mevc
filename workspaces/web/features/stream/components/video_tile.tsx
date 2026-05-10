@@ -250,11 +250,30 @@ function VideoTile({ props }: { props: MediaCombinedStream | null }) {
         )}
       />
 
+      {/* top-left */}
+      <div
+        className={classNames(
+          "absolute top-2 left-2 flex items-center gap-1 transition-opacity duration-200",
+          "opacity-100"
+        )}
+      >
+        {metadata?.isRaisedHand && (
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-black/50 text-white/80 backdrop-blur-sm transition hover:bg-black/70 hover:text-white">
+            ✋
+          </div>
+        )}
+        {metadata?.isMuted && (
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-red-500 text-white/80 backdrop-blur-sm">
+            <MicOff className="h-3.5 w-3.5" />
+          </div>
+        )}
+      </div>
+
       {/* top-right action bar */}
       <div
         className={classNames(
           "absolute top-2 right-2 flex items-center gap-1 transition-opacity duration-200",
-          showOverlay ? "opacity-100" : "opacity-0"
+          showOverlay || metadata?.isRaisedHand ? "opacity-100" : "opacity-0"
         )}
       >
         {/* Pin shortcut */}

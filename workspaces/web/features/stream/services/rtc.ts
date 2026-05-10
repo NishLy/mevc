@@ -20,10 +20,11 @@ interface WebRTCServiceProps {
   onRemovedRemoteStream?: (streamId: string) => void
   onPeerStatusChanged?: (status: string) => void
   onRoomStateChanged?: (state: RoomState) => void
-  onParticipantDataChanged?: (participants: ParticipantData[]) => void
+  onParticipantsDataChanged?: (participants: ParticipantData[]) => void
   onChatMessageReceived?: (message: ChatMessage) => void
   onChatHistoryReceived?: (messages: ChatMessage[] | null) => void
   onReactionReceived?: (reaction: ReactionData) => void
+  onParticipantDataChanged?: (participant: ParticipantData) => void
 }
 
 export class WebRTCService {
@@ -589,7 +590,7 @@ export class WebRTCService {
     this.wsService?.on(
       "participants_data_response",
       (participants: ParticipantData[]) => {
-        this.options.onParticipantDataChanged?.(participants)
+        this.options.onParticipantsDataChanged?.(participants)
       }
     )
 
@@ -612,6 +613,13 @@ export class WebRTCService {
       "reaction_received",
       (_: string, reaction: ReactionData) => {
         this.options.onReactionReceived?.(reaction)
+      }
+    )
+
+    this.wsService?.on(
+      "participant_data_changed",
+      (_: string, participant: ParticipantData) => {
+        this.options.onParticipantDataChanged?.(participant)
       }
     )
   }

@@ -160,8 +160,16 @@ export default function Room({ roomId }: RoomProps) {
         onRoomStateChanged: (roomState) => {
           setRoomState(roomState)
         },
-        onParticipantDataChanged: (participants) => {
+        onParticipantsDataChanged: (participants) => {
           useMeet.setState({ participants: participants })
+        },
+        onParticipantDataChanged(participant) {
+          // Update the specific participant in the state
+          useMeet.setState((state) => ({
+            participants: state.participants.map((p) =>
+              p.clientId === participant.clientId ? participant : p
+            ),
+          }))
         },
         onChatMessageReceived: (message) => {
           useMeet.setState((state) => ({

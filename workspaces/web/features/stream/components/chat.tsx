@@ -34,6 +34,9 @@ function ParticipantRow({
           <p className="text-[11px] text-blue-400">Host</p>
         )}
       </div>
+      {participant.isRaisedHand && (
+        <span className="text-xl leading-none">✋</span>
+      )}
       {participant.isMuted && (
         <MicOff className="h-3.5 w-3.5 shrink-0 text-red-400" />
       )}

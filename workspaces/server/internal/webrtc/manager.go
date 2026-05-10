@@ -15,12 +15,12 @@ type PaginationOrdering struct {
 }
 
 type SessionParticipantData struct {
-	ClientID   string `json:"clientId"`
-	Username   string `json:"username"`
-	Role       string `json:"role"`
-	Muted      bool   `json:"muted"`
-	VideoOff   bool   `json:"videoOff"`
-	RaisedHand bool   `json:"raisedHand"`
+	ClientID     string `json:"clientId"`
+	Username     string `json:"username"`
+	Role         string `json:"role"`
+	IsMuted      bool   `json:"isMuted"`
+	IsVideoOff   bool   `json:"isVideoOff"`
+	IsRaisedHand bool   `json:"isRaisedHand"`
 }
 
 type SessionManager interface {
@@ -135,12 +135,12 @@ func (sm *sessionManager) GetParticipantsData() []SessionParticipantData {
 	for _, session := range sm.sessions {
 		sessionState := session.GetCurrentState()
 		participants = append(participants, SessionParticipantData{
-			ClientID:   session.GetClientId(),
-			Username:   session.GetUsername(),
-			Role:       "speaker", // Not implemented yet, defaulting to speaker for now, can be extended in the future to support different roles and permissions
-			Muted:      sessionState.IsMuted,
-			VideoOff:   sessionState.IsVideoOff,
-			RaisedHand: sessionState.IsRaisedHand,
+			ClientID:     session.GetClientId(),
+			Username:     session.GetUsername(),
+			Role:         "speaker", // Not implemented yet, defaulting to speaker for now, can be extended in the future to support different roles and permissions
+			IsMuted:      sessionState.IsMuted,
+			IsVideoOff:   sessionState.IsVideoOff,
+			IsRaisedHand: sessionState.IsRaisedHand,
 		})
 	}
 	return participants

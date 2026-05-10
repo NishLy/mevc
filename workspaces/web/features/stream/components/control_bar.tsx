@@ -146,6 +146,7 @@ export default function ControlBar() {
   const localController = useMeet((state) => state.controllerState)
   const roomState = useMeet((state) => state.roomState)
   const rtcService = useMeet((state) => state.RTCService)
+  const [isRaisingHand, setIsRaisingHand] = useState(false)
 
   const { isChatOpen, isParticipantsOpen, isSettingsOpen } = useMeet(
     (state) => state.uiControls
@@ -390,9 +391,12 @@ export default function ControlBar() {
                 ))}
                 <Button
                   className="w-full cursor-pointer rounded-md bg-white/10 p-2 text-white transition-transform hover:scale-125"
-                  onClick={() => rtcService?.requestReaction("unicode", "✋")}
+                  onClick={() => {
+                    rtcService?.requestReaction("unicode", "✋")
+                    setIsRaisingHand(!isRaisingHand)
+                  }}
                 >
-                  ✋ Raise Hand
+                  {isRaisingHand ? "✋ Lower Hand" : "✋ Raise Hand"}
                 </Button>
               </div>
             }
