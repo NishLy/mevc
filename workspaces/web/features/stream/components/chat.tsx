@@ -126,6 +126,7 @@ const ChatTabs = () => {
   const participants = useMeet((state) => state.participants)
   const rtcService = useMeet((state) => state.RTCService)
   const isAllFetched = useMeet((state) => state.isChatAllFetched)
+  const clientId = useMeet((state) => state.clientId)
 
   const closeAll = () => {
     useMeet.setState((state) => ({
@@ -144,6 +145,7 @@ const ChatTabs = () => {
     ...p,
     initials: generateInitials(p.username),
     color: ColorGen.next(),
+    username: p.clientId === clientId ? "You" : p.username,
   }))
 
   function sendMessage() {

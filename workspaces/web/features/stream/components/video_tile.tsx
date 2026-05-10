@@ -124,6 +124,7 @@ function VideoTile({ props }: { props: MediaCombinedStream | null }) {
   const [menuOpen, setMenuOpen] = useState(false)
 
   const participants = useMeet((state) => state.participants)
+  const clientId = useMeet((state) => state.clientId)
 
   const metadata = useMemo(() => {
     if (!props) return null
@@ -134,8 +135,12 @@ function VideoTile({ props }: { props: MediaCombinedStream | null }) {
         (props.metadata.video?.clientId || props.metadata.audio?.clientId)
     )
 
+    if (participant && participant.clientId === clientId) {
+      return { ...participant, username: "You" }
+    }
+
     return participant
-  }, [participants, props])
+  }, [participants, props, clientId])
 
   const menuItems = props?.isLocal ? LOCAL_MENU : REMOTE_MENU
   const dangerItems = props?.isLocal ? [] : REMOTE_MENU_DANGER
