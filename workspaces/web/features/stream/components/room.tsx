@@ -186,6 +186,9 @@ export default function Room({ roomId }: RoomProps) {
             chatMessages: [...messages, ...state.chatMessages],
           }))
         },
+        onRoomMetadataChanged(metadata) {
+          useMeet.setState({ roomMetadata: metadata })
+        },
       }
     )
 

@@ -110,3 +110,14 @@ export interface ReactionRequestData {
   type: "unicode" | "assets"
   value: string
 }
+
+export interface RoomMetadata {
+  name: string
+  description: string
+  createdAt: string
+  hostId: string
+  isPrivate: boolean
+  startedAt: string
+  autoAccept: boolean
+  autoClose: boolean
+}

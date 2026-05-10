@@ -40,7 +40,19 @@ func HandleJoinRoom(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	hub.Join(roomId, conn)
 
 	if GetGroupManagerFromConn(conn) == nil {
-		GlobalSessionManager[roomId] = NewSessionManager(roomId, true)
+		// dummy metadata for now, can be extended to include more info about the session
+		metadata := SessionManagerMetadata{
+			Name:        roomId,
+			Description: fmt.Sprintf("Session manager for room %s", roomId),
+			CreatedAt:   time.Now(),
+			StartedAt:   time.Now(),
+			HostID:      "",
+			IsPrivate:   false,
+			AutoAccept:  true,
+			AutoClose:   true,
+		}
+
+		GlobalSessionManager[roomId] = NewSessionManager(roomId, metadata)
 		setEmitFunc := func(event string, args ...interface{}) {
 			hub.EmitTo(roomId, event, nil, args...)
 		}
@@ -459,4 +471,20 @@ func HandleReaction(hub ws.WsHub, conn ws.WebSocketConnection, data ...any) {
 	}
 
 	hub.EmitTo(sessionManager.GetGroupId(), "reaction_received", nil, session.GetClientId(), reactionData)
+}
+
+func HandleRoomMetadataRequest(conn ws.WebSocketConnection, data ...any) {
+	sessionManager := GetGroupManagerFromConn(conn)
+	if sessionManager == nil {
+		return
+	}
+
+	session, exists := sessionManager.GetSessionByWsID(conn.ID())
+	if !exists {
+		return
+	}
+
+	roomData := sessionManager.GetManagerMetadata()
+
+	conn.Emit("room_metadata_response", session.GetClientId(), roomData)
 }

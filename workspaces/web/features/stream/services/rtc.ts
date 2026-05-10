@@ -8,6 +8,7 @@ import {
   PendingEntry,
   ReactionData,
   ReactionRequestData,
+  RoomMetadata,
   RoomState,
   TrackMeta,
 } from "../types/service"
@@ -25,6 +26,7 @@ interface WebRTCServiceProps {
   onChatHistoryReceived?: (messages: ChatMessage[] | null) => void
   onReactionReceived?: (reaction: ReactionData) => void
   onParticipantDataChanged?: (participant: ParticipantData) => void
+  onRoomMetadataChanged?: (metadata: RoomMetadata) => void
 }
 
 export class WebRTCService {
@@ -60,6 +62,11 @@ export class WebRTCService {
     onPeerStatusChanged: (status: string) => {},
     onRoomStateChanged: (state: RoomState) => {},
     onReactionReceived: (reaction: ReactionData) => {},
+    onParticipantsDataChanged: (participants: ParticipantData[]) => {},
+    onChatMessageReceived: (message: ChatMessage) => {},
+    onChatHistoryReceived: (messages: ChatMessage[] | null) => {},
+    onParticipantDataChanged: (participant: ParticipantData) => {},
+    onRoomMetadataChanged: (metadata: RoomMetadata) => {},
   }
 
   constructor(
@@ -248,6 +255,7 @@ export class WebRTCService {
             this.emit("peer_status_changed", "connected")
           }, 1000) // add a slight delay to ensure the connection is fully established before notifying
 
+          this.emit("room_metadata_request")
           this.emit("participant_data_request")
           break
         case "completed":
@@ -620,6 +628,13 @@ export class WebRTCService {
       "participant_data_changed",
       (_: string, participant: ParticipantData) => {
         this.options.onParticipantDataChanged?.(participant)
+      }
+    )
+
+    this.wsService?.on(
+      "room_metadata_response",
+      (_: string, metadata: RoomMetadata) => {
+        this.options.onRoomMetadataChanged?.(metadata)
       }
     )
   }

@@ -169,4 +169,6 @@ func RegisterHandlers(hub ws.WsHub) {
 	hub.On("reaction_sent", func(conn ws.WebSocketConnection, data ...any) {
 		HandleReaction(hub, conn, data...)
 	})
+
+	hub.On("room_metadata_request", HandleRoomMetadataRequest)
 }

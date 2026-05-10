@@ -39,6 +39,7 @@ const DESCRIPTION_BY_STATUS: Record<MeetConnectionState, string> = {
 
 const MeetClosedVariant = (props: MeetClosedVariantProps) => {
   const partipants = useMeet((state) => state.participants)
+  const roomMetadata = useMeet((state) => state.roomMetadata)
   const participantInitials = partipants
     .slice(0, 5)
     .map((p) => generateInitials(p.username))
@@ -112,7 +113,15 @@ const MeetClosedVariant = (props: MeetClosedVariantProps) => {
       >
         <div className="flex items-center justify-between p-3.5">
           <span className="text-xs text-zinc-500">Duration</span>
-          <span className="text-xs font-medium text-white">47 min 12 sec</span>
+          <span className="text-xs font-medium text-white">
+            {roomMetadata?.startedAt
+              ? `${Math.floor(
+                  // eslint-disable-next-line react-hooks/purity
+                  (Date.now() - new Date(roomMetadata.startedAt).getTime()) /
+                    60000
+                )} min`
+              : "N/A"}
+          </span>
         </div>
         <div className="flex items-center justify-between p-3.5">
           <span className="text-xs text-zinc-500">Participants</span>

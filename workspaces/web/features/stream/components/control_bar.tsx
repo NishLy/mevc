@@ -1,6 +1,5 @@
 "use client"
 
-import { use, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -23,7 +22,6 @@ import {
 import { Badge } from "@/components/ui/badge"
 import {
   Mic,
-  MicOff,
   Video,
   VideoOff,
   Shield,
@@ -31,13 +29,9 @@ import {
   MessageSquare,
   MonitorUp,
   SmilePlus,
-  MoreVertical,
   Phone,
   ChevronUp,
   MoreHorizontal,
-  Maximize2,
-  Pin,
-  VolumeX,
 } from "lucide-react"
 import classNames from "classnames"
 import useMeet from "../state/meet"
@@ -46,22 +40,39 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { MenuItemDef } from "../types/ui"
 import { MeetConnectionState } from "../types/service"
+import { useState, useEffect, useRef, useMemo } from "react"
 
 const REACTIONS = ["👍", "👏", "❤️", "😂", "😮", "🎉", "🙌", "🤔"]
 
-function useTimer() {
-  const [seconds, setSeconds] = useState(0)
+function Timer({ date }: { date: string }) {
+  const dateRef = useRef(new Date(date))
+
+  const secondsElapsed = useMemo(
+    () =>
+      // eslint-disable-next-line react-hooks/refs, react-hooks/purity
+      dateRef.current.getTime() < Date.now()
+        ? // eslint-disable-next-line react-hooks/refs, react-hooks/purity
+          Math.floor((Date.now() - dateRef.current.getTime()) / 1000)
+        : 0,
+    []
+  )
+  const [seconds, setSeconds] = useState(secondsElapsed)
+
   useEffect(() => {
     const id = setInterval(() => setSeconds((s) => s + 1), 1000)
     return () => clearInterval(id)
   }, [])
-  const m = String(Math.floor(seconds / 60)).padStart(2, "0")
+
+  // Calculate Hours, Minutes, and Seconds
+  const h = String(Math.floor(seconds / 3600)).padStart(2, "0")
+  const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")
   const s = String(seconds % 60).padStart(2, "0")
-  return `${m}:${s}`
+
+  // Format: HH:MM:SS
+  return `${h}:${m}:${s}`
 }
 
 interface ControlButtonProps {
@@ -147,13 +158,13 @@ export default function ControlBar() {
   const localController = useMeet((state) => state.controllerState)
   const roomState = useMeet((state) => state.roomState)
   const rtcService = useMeet((state) => state.RTCService)
+  const roomMetadata = useMeet((state) => state.roomMetadata)
   const [isRaisingHand, setIsRaisingHand] = useState(false)
 
   const { isChatOpen, isParticipantsOpen, isSettingsOpen } = useMeet(
     (state) => state.uiControls
   )
 
-  const timer = useTimer()
   const [menuOpen, setMenuOpen] = useState(false)
 
   const LOCAL_MENU: MenuItemDef[] = useMemo(
@@ -249,7 +260,11 @@ export default function ControlBar() {
         <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/8 bg-[#1a1a28]/95 px-4 py-2.5 shadow-2xl backdrop-blur-xl">
           {/* Timer */}
           <span className="min-w-11 text-center text-xs text-white/40 tabular-nums select-none">
-            {timer}
+            {roomMetadata?.startedAt ? (
+              <Timer date={roomMetadata.startedAt} />
+            ) : (
+              "00:00:00"
+            )}
           </span>
 
           <div className="mx-2 h-8 w-px bg-white/10" />

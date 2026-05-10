@@ -8,6 +8,7 @@ import {
   MediaCombinedStream,
   MeetConnectionState,
   ParticipantData,
+  RoomMetadata,
   RoomState,
 } from "../types/service"
 import { MediaStreamController } from "../services/local"
@@ -62,6 +63,7 @@ interface MeetState {
   chatMessages: ChatMessage[]
   isChatAllFetched: boolean
   pagination: VideoPagination
+  roomMetadata?: RoomMetadata
   setRoomState: (state: RoomState) => void
   addRemoteStream: (stream: MediaCombinedStream) => void
   removeRemoteStream: (streamId: string) => void
@@ -116,6 +118,7 @@ const useMeet = create<MeetState>((set, state) => ({
     maxiumPerPage: 10,
     visibleStreams: [],
   },
+  roomMetadata: undefined,
   setRoomState: (roomState) => {
     const maxiumPerPage = roomState.maxium_per_page
 

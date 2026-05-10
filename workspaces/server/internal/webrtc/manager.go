@@ -3,6 +3,7 @@ package rtc
 import (
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
 )
@@ -63,6 +64,8 @@ type SessionManager interface {
 	GetParticipantsData() []SessionParticipantData
 
 	GetChatService() *ChatService
+
+	GetManagerMetadata() SessionManagerMetadata
 }
 
 type LobySession struct {
@@ -70,12 +73,15 @@ type LobySession struct {
 	session Session
 }
 
-type RoomData struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	CreatedAt   int64  `json:"created_at"`
-	HostID      string `json:"host_id"`
-	IsPrivate   bool   `json:"is_private"`
+type SessionManagerMetadata struct {
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"createdAt"`
+	HostID      string    `json:"hostId"`
+	IsPrivate   bool      `json:"isPrivate"`
+	StartedAt   time.Time `json:"startedAt"`
+	AutoAccept  bool      `json:"autoAccept"`
+	AutoClose   bool      `json:"autoClose"`
 }
 
 type RoomCurrentState struct {
@@ -86,9 +92,7 @@ type RoomCurrentState struct {
 
 type sessionManager struct {
 	// own data
-	id         string
-	autoClose  bool
-	autoAccept bool
+	id string
 	// session management
 	lobby                   map[string]LobySession
 	sessions                map[string]Session
@@ -104,16 +108,19 @@ type sessionManager struct {
 	EmitFCN func(event string, args ...interface{})
 	// chat management
 	chatService *ChatService
+	// startedAt    time.Time
+	metadata SessionManagerMetadata
+
+	// timers
+	selfDestructionTimer *time.Timer
 }
 
-func NewSessionManager(id string, autoAccept bool) SessionManager {
+func NewSessionManager(id string, metadata SessionManagerMetadata) SessionManager {
 	return &sessionManager{
 		id:                      id,
 		sessions:                make(map[string]Session),
 		wsToClientId:            make(map[string]string),
 		routers:                 make([]*TrackRouter, 0),
-		autoClose:               true,
-		autoAccept:              autoAccept,
 		lobby:                   make(map[string]LobySession),
 		mu:                      sync.RWMutex{},
 		sessionSubscribedTracks: make(map[string]map[string][]*TrackRouter),
@@ -121,7 +128,12 @@ func NewSessionManager(id string, autoAccept bool) SessionManager {
 		hasChangedRouters:       true,
 		cachedOrderedRouters:    make([]string, 0),
 		chatService:             NewChatService(),
+		metadata:                metadata,
 	}
+}
+
+func (sm *sessionManager) GetManagerMetadata() SessionManagerMetadata {
+	return sm.metadata
 }
 
 func (sm *sessionManager) GetChatService() *ChatService {
@@ -250,7 +262,7 @@ func (sm *sessionManager) AddSession(session Session, wsID string) bool {
 	defer sm.mu.Unlock()
 
 	sm.wsToClientId[wsID] = session.GetClientId()
-	if !sm.autoAccept {
+	if !sm.metadata.AutoAccept {
 		sm.lobby[session.GetClientId()] = LobySession{
 			wsID:    wsID,
 			session: session,
@@ -431,9 +443,20 @@ func (sm *sessionManager) RemoveFromSessionManager(clientID string) {
 
 	session.Close()
 
-	// if len(sm.GetSessions()) == 0 {
-	// 	delete(GlobalSessionManager, sm.GetGroupId())
-	// }
+	// check if there are no more sessions in the session manager, if so, we start a timer to allow for quick rejoining without destroying the session manager immediately, if after the timer expires there are still no sessions, we close the session manager and clean up all resources to prevent memory leaks
+	if len(sm.GetSessions()) == 0 {
+		if sm.selfDestructionTimer != nil {
+			sm.selfDestructionTimer.Stop() // Stop any existing timer to avoid multiple timers running if there are multiple join/leave cycles
+		}
+
+		// Start a timer to allow for quick rejoining without destroying the session manager immediately
+		sm.selfDestructionTimer = time.AfterFunc(5*time.Minute, func() {
+			if len(sm.GetSessions()) == 0 {
+				logger.Sugar.Infof("No sessions rejoined within the grace period, closing session manager %s", sm.id)
+				sm.CloseAll()
+			}
+		})
+	}
 
 	sm.EmitFCN("room_state_changed", RoomCurrentState{
 		MaxiumPerPage:              MAX_STREAMS_PER_PAGE,
