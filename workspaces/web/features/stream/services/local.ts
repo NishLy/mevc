@@ -22,6 +22,7 @@ export const defaultMediaStreamOptions: MediaStreamOptions = {
   audioEnabled: true,
   useAnyAvailableCamera: true,
   useAnyAvailableAudio: true,
+  useAnyAvailableAudioOutput: true,
   autoStartStream: true,
 }
 
@@ -31,23 +32,26 @@ export class MediaStreamController {
   activeScreenShareStream: MediaStream | null = null
   availableVideoDevices: MediaDeviceInfo[] = []
   availableAudioDevices: MediaDeviceInfo[] = []
+  availableAudioOutputDevices: MediaDeviceInfo[] = []
   options: MediaStreamOptions = { ...defaultMediaStreamOptions }
 
   activeVideoDeviceId: string | null = null
   activeAudioDeviceId: string | null = null
-
+  activeAudioOutputDeviceId: string | null = null
   isCurrentlySharingScreen = false
   isCurrentlyRecording = false
 
   onDevicesUpdatedCallback?: (
     availableVideoDevices: MediaDeviceInfo[],
-    availableAudioDevices: MediaDeviceInfo[]
+    availableAudioDevices: MediaDeviceInfo[],
+    availableAudioOutputDevices: MediaDeviceInfo[]
   ) => void
 
   onVideoToggleCallback?: (enabled: boolean) => void
   onAudioToggleCallback?: (enabled: boolean) => void
   onVideoDeviceChangeCallback?: (deviceId: string) => void
   onAudioDeviceChangeCallback?: (deviceId: string) => void
+  onAudioOutputDeviceChangeCallback?: (deviceId: string) => void
   onScreenShareToggleCallback?: (isSharing: boolean) => void
   onLocalStreamUpdateCallback?: (streams: LocalStreamsTuple) => void
   onRecordingToggleCallback?: (isRecording: boolean) => void
@@ -86,6 +90,7 @@ export class MediaStreamController {
   private async init() {
     const videoCameras = await this.getConnectedDevices("videoinput", "video")
     const audioDevices = await this.getConnectedDevices("audioinput", "audio")
+    const audioOutputs = await this.getConnectedDevices("audiooutput", "audio")
 
     // Listen for device changes
     navigator.mediaDevices.addEventListener("devicechange", async () => {
@@ -98,12 +103,22 @@ export class MediaStreamController {
         "audio"
       )
 
+      const newAudioOutputs = await this.getConnectedDevices(
+        "audiooutput",
+        "audio"
+      )
+
       if (this.onDevicesUpdatedCallback) {
-        this.onDevicesUpdatedCallback(newVideoCameras, newAudioDevices)
+        this.onDevicesUpdatedCallback(
+          newVideoCameras,
+          newAudioDevices,
+          newAudioOutputs
+        )
       }
 
       this.availableVideoDevices = newVideoCameras
       this.availableAudioDevices = newAudioDevices
+      this.availableAudioOutputDevices = newAudioOutputs
     })
 
     // Auto-start stream if option is enabled
@@ -121,6 +136,14 @@ export class MediaStreamController {
         this.activeAudioDeviceId = audioDevices[0]!.deviceId
         if (this.onAudioDeviceChangeCallback) {
           this.onAudioDeviceChangeCallback(this.activeAudioDeviceId)
+        }
+      }
+
+      // If useAnyAvailableAudioOutput is enabled, set the current device IDs to the first available devices
+      if (this.options.useAnyAvailableAudioOutput && audioOutputs.length > 0) {
+        this.activeAudioOutputDeviceId = audioOutputs[0]!.deviceId
+        if (this.onAudioOutputDeviceChangeCallback) {
+          this.onAudioOutputDeviceChangeCallback(this.activeAudioOutputDeviceId)
         }
       }
 
@@ -144,7 +167,7 @@ export class MediaStreamController {
       this.setLocalStream(LOCAL_STREAM_TYPE.CAMERA, this.activeLocalMediaStream)
 
       // Store available devices in the instance for later use
-      this.onDevicesUpdatedCallback?.(videoCameras, audioDevices)
+      this.onDevicesUpdatedCallback?.(videoCameras, audioDevices, audioOutputs)
     }
   }
 
@@ -331,6 +354,17 @@ export class MediaStreamController {
       }
     } catch (e) {
       console.warn("Could not switch audio device:", e)
+    }
+  }
+
+  async changeAudioOutputDevice(newDeviceId: string) {
+    try {
+      this.activeAudioOutputDeviceId = newDeviceId
+      if (this.onAudioOutputDeviceChangeCallback) {
+        this.onAudioOutputDeviceChangeCallback(newDeviceId)
+      }
+    } catch (e) {
+      console.warn("Could not switch audio output device:", e)
     }
   }
 

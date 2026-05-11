@@ -51,6 +51,7 @@ export interface MediaStreamOptions {
   audioDeviceId?: string
   useAnyAvailableCamera?: boolean
   useAnyAvailableAudio?: boolean
+  useAnyAvailableAudioOutput?: boolean
   autoStartStream?: boolean
 }
 

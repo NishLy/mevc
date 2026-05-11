@@ -38,8 +38,10 @@ interface MeetState {
     audioEnabled: boolean
     availableVideoDevices: MediaDeviceInfo[]
     availableAudioDevices: MediaDeviceInfo[]
+    availableAudioOutputDevices: MediaDeviceInfo[]
     currentVideoDeviceId: string | null
     currentAudioDeviceId: string | null
+    currentAudioOutputDeviceId: string | null
     isCurrentlySharingScreen?: boolean
     isCurrentlyRecording?: boolean
   }
@@ -84,8 +86,10 @@ const useMeet = create<MeetState>((set, state) => ({
     audioEnabled: true,
     availableVideoDevices: [],
     availableAudioDevices: [],
+    availableAudioOutputDevices: [],
     currentVideoDeviceId: null,
     currentAudioDeviceId: null,
+    currentAudioOutputDeviceId: null,
     isCurrentlySharingScreen: false,
     isCurrentlyRecording: false,
   },
@@ -222,6 +226,13 @@ const useMeet = create<MeetState>((set, state) => ({
           currentAudioDeviceId: deviceId,
         },
       }))
+    controller.onAudioOutputDeviceChangeCallback = (deviceId: string) =>
+      set((state) => ({
+        controllerState: {
+          ...state.controllerState,
+          currentAudioOutputDeviceId: deviceId,
+        },
+      }))
     set({ controller })
     controller.onScreenShareToggleCallback = (isSharing: boolean) => {
       set((state) => ({
@@ -243,13 +254,15 @@ const useMeet = create<MeetState>((set, state) => ({
     }
     controller.onDevicesUpdatedCallback = (
       availableVideoDevices: MediaDeviceInfo[],
-      availableAudioDevices: MediaDeviceInfo[]
+      availableAudioDevices: MediaDeviceInfo[],
+      availableAudioOutputDevices: MediaDeviceInfo[]
     ) => {
       set((state) => ({
         controllerState: {
           ...state.controllerState,
           availableVideoDevices,
           availableAudioDevices,
+          availableAudioOutputDevices,
         },
       }))
     }
