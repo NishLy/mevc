@@ -3,6 +3,8 @@
 import { useSuspenseQuery } from "@tanstack/react-query"
 import { getRoomByCode } from "../services/api"
 import PreviewRoom from "./preview/preview"
+import { useState } from "react"
+import Room from "./room"
 
 interface IPreloadProps {
   code: string
@@ -14,5 +16,15 @@ export default function Preload({ code }: IPreloadProps) {
     queryFn: () => getRoomByCode(code),
   })
 
-  return <PreviewRoom data={data.data.data} />
+  const [hasDonePreload, setHasDonePreload] = useState(false)
+
+  const handleJoin = () => {
+    setHasDonePreload(true)
+  }
+
+  return !hasDonePreload ? (
+    <PreviewRoom data={data.data.data} onJoin={handleJoin} />
+  ) : (
+    <Room data={data.data.data} />
+  )
 }

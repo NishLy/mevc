@@ -22,10 +22,10 @@ import { Mic, Video, VideoOff, Volume2 } from "lucide-react"
 
 interface IPreviewRoomProps {
   data: IRoom
-  clientId?: string
+  onJoin: () => void
 }
 
-export default function PreviewRoom({ data, clientId }: IPreviewRoomProps) {
+export default function PreviewRoom({ data, onJoin }: IPreviewRoomProps) {
   const [name, setName] = useState("")
   const [audioOption, setAudioOption] = useState("computer")
   const { controller, setController, controllerState, localStreams } = useMeet()
@@ -42,10 +42,17 @@ export default function PreviewRoom({ data, clientId }: IPreviewRoomProps) {
   }, [controllerState.videoEnabled, localStreams])
 
   useEffect(() => {
-    const localMediaController = new MediaStreamController()
+    const localMediaController = new MediaStreamController({
+      videoEnabled: true,
+      audioEnabled: true,
+      autoStartStream: true,
+    })
+
+    // dont remove it because we will use it later when user click on "Join now" button to start the stream
     setController(localMediaController)
+
     return () => {
-      localMediaController.destroy()
+      useMeet.setState({ userName: name })
     }
   }, [])
 
@@ -160,6 +167,7 @@ export default function PreviewRoom({ data, clientId }: IPreviewRoomProps) {
                         onValueChange={(value) =>
                           controller?.changeAudioDevice(value)
                         }
+                        value={controllerState.currentAudioDeviceId || ""}
                       >
                         <SelectTrigger className="h-auto max-w-60 gap-1 border-none p-0 text-sm shadow-none focus:ring-0">
                           <div className="truncate text-left">
@@ -200,6 +208,7 @@ export default function PreviewRoom({ data, clientId }: IPreviewRoomProps) {
                       onValueChange={(value) =>
                         controller?.changeAudioOutputDevice(value)
                       }
+                      value={controllerState.currentAudioOutputDeviceId || ""}
                     >
                       <SelectTrigger className="h-auto max-w-60 gap-1 border-none p-0 text-sm shadow-none focus:ring-0">
                         <div className="truncate text-left">
@@ -235,7 +244,11 @@ export default function PreviewRoom({ data, clientId }: IPreviewRoomProps) {
         <Button variant="outline" className="px-6">
           Cancel
         </Button>
-        <Button variant="default" className="px-6 text-background">
+        <Button
+          variant="default"
+          className="px-6 text-background"
+          onClick={onJoin}
+        >
           Join now
         </Button>
       </div>
