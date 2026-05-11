@@ -4,6 +4,7 @@ import (
 	"github.com/NishLy/go-fiber-boilerplate/internal/app"
 	"github.com/NishLy/go-fiber-boilerplate/internal/auth"
 	"github.com/NishLy/go-fiber-boilerplate/internal/room"
+	"github.com/NishLy/go-fiber-boilerplate/internal/schedule"
 	"github.com/NishLy/go-fiber-boilerplate/internal/token"
 	"github.com/NishLy/go-fiber-boilerplate/internal/user"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
@@ -36,6 +37,13 @@ func Setup(appContainer *app.App, app *fiber.App) {
 
 	// init room handler and service
 	room.RoomRouter(api, roomService)
+
+	// init schedule repository and service
+	scheduleRepo := schedule.NewScheduleRepository(*sugarLogger)
+	scheduleService := schedule.NewScheduleService(scheduleRepo)
+
+	// init schedule handler and service
+	schedule.ScheduleRouter(api, scheduleService)
 
 	// init docs route
 	if appContainer.Config.ENV == "development" {
