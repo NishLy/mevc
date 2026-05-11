@@ -1,4 +1,6 @@
-import Room from "@/features/stream/components/room"
+import Preload from "@/features/stream/components/preload"
+import { ErrorBoundary } from "next/dist/client/components/error-boundary"
+import { Suspense } from "react"
 
 export default async function Page({
   searchParams,
@@ -7,14 +9,17 @@ export default async function Page({
 }) {
   // Await the searchParams object
   const filters = await searchParams
-  const roomId = filters.roomId
+
+  const code = filters.code
 
   return (
     <div>
-      {roomId ? (
-        <Room roomId={typeof roomId === "string" ? roomId : "default-room"} />
+      {code ? (
+        <Suspense fallback={<div>Loading room details...</div>}>
+          <Preload code={code as string} />
+        </Suspense>
       ) : (
-        <p>No room ID provided</p>
+        <p>No code provided</p>
       )}
     </div>
   )

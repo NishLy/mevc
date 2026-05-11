@@ -13,9 +13,10 @@ import JoiningVariant from "./loadings/join"
 import ReconnectingVariant from "./loadings/rejoin"
 import MeetClosedVariant from "./loadings/closed"
 import ReactionComponent from "./reaction"
+import IRoom from "../types"
 
 interface RoomProps {
-  roomId: string
+  data: IRoom
 }
 
 const RenderLoading = (status: MeetConnectionState) => {
@@ -52,7 +53,7 @@ const RenderLoading = (status: MeetConnectionState) => {
   return null
 }
 
-export default function Room({ roomId }: RoomProps) {
+export default function Room({ data }: RoomProps) {
   const {
     userName,
     clientId,
@@ -72,7 +73,7 @@ export default function Room({ roomId }: RoomProps) {
   } = useMeet()
 
   useEffect(() => {
-    if (!roomId || !clientId || !userName) return
+    if (!data || !clientId || !userName) return
 
     const ws = new WSservice({
       url: process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws",
@@ -81,22 +82,17 @@ export default function Room({ roomId }: RoomProps) {
         autoConnect: true,
         listeners: {
           connect: () => {
-            ws.emit("join_room", clientId, roomId, userName)
-            console.log("WebSocket connected, emitted join_room with:", {
-              clientId,
-              roomId,
-              userName,
-            })
+            ws.emit("join_room", clientId, data.code, userName)
           },
           joined_lobby: (joinedRoomId: string, participants: IUser[]) => {
-            if (joinedRoomId === roomId) {
+            if (joinedRoomId === data.code) {
               setCurrentStatus(MeetConnectionState.Lobby)
               setParticipantsInLobby(participants)
             }
           },
           joined_room: (joinedRoomId: string) => {
-            if (joinedRoomId === roomId) {
-              setRoomID(roomId)
+            if (joinedRoomId === data.code) {
+              setRoomID(data.code)
               setCurrentStatus(MeetConnectionState.SessionCreated)
             }
           },
@@ -108,7 +104,7 @@ export default function Room({ roomId }: RoomProps) {
       },
     })
 
-    const localMediaController = new MediaStreamController(clientId, userName)
+    const localMediaController = new MediaStreamController()
     setController(localMediaController)
     setWSservice(ws)
 
@@ -137,7 +133,7 @@ export default function Room({ roomId }: RoomProps) {
     const webRTCService = new WebRTCService(
       clientId,
       userName,
-      roomId,
+      data.code,
       ws,
       localStreams,
       {
@@ -194,7 +190,6 @@ export default function Room({ roomId }: RoomProps) {
 
     setRTCService(webRTCService)
   }, [
-    roomId,
     localStreams,
     ws,
     RTCService,

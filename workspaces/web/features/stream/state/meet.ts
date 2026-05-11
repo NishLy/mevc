@@ -15,13 +15,7 @@ import { MediaStreamController } from "../services/local"
 import { WebRTCService } from "../services/rtc"
 import WSservice from "@/lib/ws"
 
-const searchParams = new URLSearchParams(window.location.search)
-const dummyClientId =
-  searchParams.get("client_id") ||
-  "client_" + Math.random().toString(36).substr(2, 5)
-const dummyUsername =
-  searchParams.get("username") ||
-  "User_" + Math.random().toString(36).substr(2, 5)
+const dummyClientId = Math.random().toString(36).substr(2, 5)
 
 interface VideoPagination {
   currentPage: number
@@ -77,8 +71,8 @@ interface MeetState {
 }
 
 const useMeet = create<MeetState>((set, state) => ({
-  clientId: dummyClientId,
-  userName: dummyUsername,
+  clientId: null,
+  userName: null,
   roomId: null,
   pc: null,
   localStreams: [null, null],

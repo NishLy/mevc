@@ -11,6 +11,10 @@ import (
 
 func Logger() fiber.Handler {
 	return func(c fiber.Ctx) error {
+		if c.Method() == "OPTIONS" {
+			return c.Next()
+		}
+
 		path := c.Path()
 		if path == "/ws" || path == "/ws/" || path == "/" {
 			return c.Next()

@@ -38,13 +38,17 @@ func main() {
 	database.CleanupDBs(time.Second * 60)
 
 	// middlewares
+	fiberApp.Use(requestid.New())
+	fiberApp.Use(middleware.Logger())
+	fiberApp.Use(middleware.RecoverConfig()) // Catch panics early
+
+	fiberApp.Use(middleware.CORSConfig())
+
 	fiberApp.Use(helmet.New())
 	fiberApp.Use(compress.New())
-	fiberApp.Use(middleware.Logger())
-	fiberApp.Use(requestid.New())
-	fiberApp.Use(middleware.RecoverConfig())
+
 	fiberApp.Use(middleware.LimiterConfig())
-	fiberApp.Use(middleware.CORSConfig())
+
 	fiberApp.Use(middleware.InjectTenantIdentifier())
 	fiberApp.Use(middleware.InjectOpenFGA())
 

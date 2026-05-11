@@ -7,10 +7,10 @@ import (
 
 func RoomRouter(v1 fiber.Router, roomService RoomService) {
 	roomHandler := NewRoomHandler(roomService)
-	room := v1.Group("/rooms", middleware.Protected())
+	room := v1.Group("/rooms")
 
 	room.Get("/:id", middleware.Protected(), roomHandler.GetRoomByID)
-	room.Get("/code/:code", middleware.Protected(), roomHandler.GetRoomByCode)
+	room.Get("/code/:code", roomHandler.GetRoomByCode)
 	room.Post("/upsert/:id?", middleware.Protected(), roomHandler.Upsert)
 	room.Delete("/:id", middleware.Protected(), roomHandler.Delete)
 }

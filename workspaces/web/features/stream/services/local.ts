@@ -57,11 +57,7 @@ export class MediaStreamController {
     audioEnabled: true,
   }
 
-  constructor(
-    public id: string,
-    public userName: string,
-    options?: MediaStreamOptions
-  ) {
+  constructor(options?: MediaStreamOptions) {
     if (options) {
       this.options = { ...this.options, ...options }
     }
@@ -201,11 +197,11 @@ export class MediaStreamController {
         ? {
             trackId: trackAudio?.id || "",
             kind: trackAudio?.kind || "",
-            clientId: this.id,
+            clientId: "",
             streamGroupId,
             label: trackAudio?.label || "",
             enabled: trackAudio?.enabled || false,
-            username: this.userName,
+            username: "",
             streamId: streamId || "",
             transceiverMid: "",
           }
@@ -215,11 +211,11 @@ export class MediaStreamController {
         ? {
             trackId: trackVideo?.id || "",
             kind: trackVideo?.kind || "",
-            clientId: this.id,
+            clientId: "",
             streamGroupId,
             label: trackVideo?.label || "",
             enabled: trackVideo?.enabled || false,
-            username: this.userName,
+            username: "",
             streamId: streamId || "",
             transceiverMid: "",
           }
