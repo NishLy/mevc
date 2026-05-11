@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"fmt"
+
 	pkg "github.com/NishLy/go-fiber-boilerplate/pkg/hash"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -37,6 +39,9 @@ func (room *Room) BeforeCreate(_ *gorm.DB) error {
 
 		room.Pin = &hashedPin
 	}
+
+	room.Code = pkg.GenerateUniqueCode(8)
+	room.Url = fmt.Sprintf("/room/%s", room.Code)
 
 	return nil
 }

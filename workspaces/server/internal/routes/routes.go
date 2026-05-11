@@ -3,6 +3,7 @@ package routes
 import (
 	"github.com/NishLy/go-fiber-boilerplate/internal/app"
 	"github.com/NishLy/go-fiber-boilerplate/internal/auth"
+	"github.com/NishLy/go-fiber-boilerplate/internal/room"
 	"github.com/NishLy/go-fiber-boilerplate/internal/token"
 	"github.com/NishLy/go-fiber-boilerplate/internal/user"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
@@ -28,6 +29,13 @@ func Setup(appContainer *app.App, app *fiber.App) {
 
 	// init user handler and service
 	user.UserRouter(api, &userService)
+
+	// init room repository and service
+	roomRepo := room.NewRoomRepository(*sugarLogger)
+	roomService := room.NewRoomService(roomRepo)
+
+	// init room handler and service
+	room.RoomRouter(api, roomService)
 
 	// init docs route
 	if appContainer.Config.ENV == "development" {

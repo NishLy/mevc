@@ -13,7 +13,6 @@ import (
 	"github.com/NishLy/go-fiber-boilerplate/internal/middleware"
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/database"
 	"github.com/NishLy/go-fiber-boilerplate/internal/platform/ws"
-	"github.com/NishLy/go-fiber-boilerplate/internal/room"
 	"github.com/NishLy/go-fiber-boilerplate/internal/routes"
 	rtc "github.com/NishLy/go-fiber-boilerplate/internal/webrtc"
 	"github.com/NishLy/go-fiber-boilerplate/pkg/logger"
@@ -54,7 +53,6 @@ func main() {
 		WsHub:  ws.NewWsFiber(fiberApp),
 	}
 
-	room.Bootstrap(appContainer.WsHub)
 	routes.Setup(appContainer, fiberApp)
 
 	go rtc.WebRTCBootstrap(appContainer.WsHub)
