@@ -2,7 +2,7 @@
 
 import ControlBar from "@/features/stream/components/control_bar"
 import VideosGrid from "@/features/stream/components/video_grid"
-import { use, useEffect } from "react"
+import { useEffect } from "react"
 import { MediaStreamController } from "../services/local"
 import useMeet from "../state/meet"
 import { WebRTCService } from "../services/rtc"
@@ -73,7 +73,7 @@ export default function Room({ data }: RoomProps) {
   } = useMeet()
 
   useEffect(() => {
-    if (!data || !clientId || !userName) return
+    if (!data || !clientId) return
 
     const ws = new WSservice({
       url: process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws",
@@ -201,6 +201,7 @@ export default function Room({ data }: RoomProps) {
     addRemoteStream,
     removeRemoteStream,
     setRoomState,
+    data.code,
   ])
 
   useEffect(() => {

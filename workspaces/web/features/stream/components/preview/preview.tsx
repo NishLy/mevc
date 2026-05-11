@@ -22,10 +22,15 @@ import { Mic, Video, VideoOff, Volume2 } from "lucide-react"
 
 interface IPreviewRoomProps {
   data: IRoom
+  clientId?: string
   onJoin: () => void
 }
 
-export default function PreviewRoom({ data, onJoin }: IPreviewRoomProps) {
+export default function PreviewRoom({
+  data,
+  clientId,
+  onJoin,
+}: IPreviewRoomProps) {
   const [name, setName] = useState("")
   const [audioOption, setAudioOption] = useState("computer")
   const { controller, setController, controllerState, localStreams } = useMeet()
@@ -51,9 +56,13 @@ export default function PreviewRoom({ data, onJoin }: IPreviewRoomProps) {
     // dont remove it because we will use it later when user click on "Join now" button to start the stream
     setController(localMediaController)
 
-    return () => {
-      useMeet.setState({ userName: name })
+    if (!clientId && data.allow_guests) {
+      // generate random client id for guest user
+      const generatedClientId = crypto.randomUUID()
+      useMeet.setState({ clientId: generatedClientId })
     }
+
+    return () => {}
   }, [])
 
   useEffect(() => {
@@ -247,7 +256,11 @@ export default function PreviewRoom({ data, onJoin }: IPreviewRoomProps) {
         <Button
           variant="default"
           className="px-6 text-background"
-          onClick={onJoin}
+          onClick={() => {
+            useMeet.setState({ userName: name })
+            onJoin()
+          }}
+          disabled={name.trim() === ""}
         >
           Join now
         </Button>
