@@ -13,8 +13,6 @@ import {
   TrackMeta,
 } from "../types/service"
 import { createBlackVideoTrack } from "./local"
-import { metadata, th, track } from "framer-motion/m"
-import page from "@/app/room/page"
 
 interface WebRTCServiceProps {
   onAddedRemoteStream?: (stream: MediaCombinedStream) => void

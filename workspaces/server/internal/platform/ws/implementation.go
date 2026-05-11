@@ -9,14 +9,6 @@ import (
 func NewWsFiber(app *fiber.App) WsHub {
 	hub := NewWsHub()
 
-	// app.Use("/ws", func(c fiber.Ctx) error {
-	// 	if websocket.IsWebSocketUpgrade(c) {
-	// 		c.Locals("allowed", true)
-	// 		return c.Next()
-	// 	}
-	// 	return fiber.ErrUpgradeRequired
-	// })
-
 	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
 		conn := hub.Register(c)
 
@@ -68,5 +60,6 @@ func NewWsFiber(app *fiber.App) WsHub {
 
 		}
 	}))
+
 	return hub
 }

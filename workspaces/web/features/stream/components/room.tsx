@@ -62,14 +62,13 @@ export default function Room({ data }: RoomProps) {
     RTCService,
     ws,
     setCurrentStatus,
-    setController,
-    setWSservice,
     setRoomID,
     setRTCService,
     setParticipantsInLobby,
     addRemoteStream,
     removeRemoteStream,
     setRoomState,
+    setWSservice,
   } = useMeet()
 
   useEffect(() => {
@@ -104,14 +103,8 @@ export default function Room({ data }: RoomProps) {
       },
     })
 
-    const localMediaController = new MediaStreamController()
-    setController(localMediaController)
     setWSservice(ws)
 
-    return () => {
-      localMediaController.destroy()
-      ws.close()
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -189,20 +182,7 @@ export default function Room({ data }: RoomProps) {
     )
 
     setRTCService(webRTCService)
-  }, [
-    localStreams,
-    ws,
-    RTCService,
-    setRTCService,
-    setCurrentStatus,
-    status,
-    clientId,
-    userName,
-    addRemoteStream,
-    removeRemoteStream,
-    setRoomState,
-    data.code,
-  ])
+  }, [localStreams, ws, status, clientId, userName, data.code])
 
   useEffect(() => {
     if (!RTCService || status !== MeetConnectionState.Connected) return
