@@ -41,7 +41,7 @@ func (room *Room) BeforeCreate(_ *gorm.DB) error {
 	}
 
 	room.Code = pkg.GenerateUniqueCode(8)
-	room.Url = fmt.Sprintf("/room/%s", room.Code)
+	room.Url = fmt.Sprintf("/room/code/%s", room.Code)
 
 	return nil
 }

@@ -6,7 +6,7 @@ type Occurance struct {
 	TimestampModel
 	SoftDeleteModel
 	ID          uint64    `json:"id" gorm:"primaryKey"`
-	ScheduleID  uint64    `json:"schedule_id" gorm:"index;not null"`
+	ScheduleID  uint64    `json:"schedule_id" gorm:"index;not null;<-:create"`
 	Schedule    *Schedule `gorm:"foreignKey:ScheduleID;references:ID" json:"schedule,omitempty"`
 	Start       time.Time `json:"start" gorm:"not null"` // Unix timestamp
 	End         time.Time `json:"end" gorm:"not null"`   // Unix timestamp

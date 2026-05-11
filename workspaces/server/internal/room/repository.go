@@ -32,7 +32,7 @@ func (r *roomRepository) FindByID(ctx context.Context, id string) (*domain.Room,
 	}
 
 	var room domain.Room
-	err = db.DB.Where("id = ?", id).First(&room).Error
+	err = db.DB.Where("id = ?", id).Preload("Schedules").First(&room).Error
 	if err != nil {
 		return nil, database.Wrap(err)
 	}
@@ -46,7 +46,7 @@ func (r *roomRepository) FindByCode(ctx context.Context, code string) (*domain.R
 	}
 
 	var room domain.Room
-	err = db.DB.Where("code = ?", code).First(&room).Error
+	err = db.DB.Where("code = ?", code).Preload("Schedules").First(&room).Error
 	if err != nil {
 		return nil, database.Wrap(err)
 	}
